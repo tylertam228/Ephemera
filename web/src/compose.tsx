@@ -1,17 +1,42 @@
 import { FormEvent, useState } from "react";
 import { prepareDrop, uploadDrop } from "./drop.mjs";
 import { expiry, presets } from "./retention.mjs";
+import { Bi } from "./ui";
 
 type Recipient = { id: string; name: string; publicKey: string };
 
-export function Compose({ recipients, maxBytes }: { recipients: Recipient[]; maxBytes: number }) {
+const presetZh: Record<string, string> = {
+  "1m": "1 分鐘",
+  "5m": "5 分鐘",
+  "15m": "15 分鐘",
+  "1h": "1 小時",
+  "1d": "1 天",
+  "7d": "7 天",
+  "30d": "30 天",
+};
+
+const notices = {
+  sent: ["Sent.", "已傳送。"],
+  cap: ["That drop is too large.", "內容太大。"],
+  failed: ["Could not send.", "無法傳送。"],
+} as const;
+
+export function Compose({
+  recipients,
+  maxBytes,
+  deviceId,
+}: {
+  recipients: Recipient[];
+  maxBytes: number;
+  deviceId: string;
+}) {
   const [texts, setTexts] = useState([""]);
   const [files, setFiles] = useState<File[]>([]);
   const [pin, setPin] = useState("");
   const [preset, setPreset] = useState("1m");
   const [at, setAt] = useState("");
   const [sending, setSending] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<keyof typeof notices | "">("");
   const picked = at ? new Date(at).getTime() : null;
   const chosen = expiry({ preset, at: picked }, Date.now());
   const presetRow = presets.find((row) => row[0] === preset);
@@ -32,6 +57,7 @@ export function Compose({ recipients, maxBytes }: { recipients: Recipient[]; max
         maxBytes,
       });
       await uploadDrop({
+        senderDeviceId: deviceId,
         pinSalt: prepared.pinSalt,
         keys: prepared.keys,
         frames: prepared.frames,
@@ -42,24 +68,28 @@ export function Compose({ recipients, maxBytes }: { recipients: Recipient[]; max
       setPin("");
       setAt("");
       setPreset("1m");
-      setNotice("Sent.");
+      setNotice("sent");
     } catch (err) {
-      setNotice(err instanceof Error && "code" in err && err.code === "cap" ? "That drop is too large." : "Could not send.");
+      setNotice(err instanceof Error && "code" in err && err.code === "cap" ? "cap" : "failed");
     } finally {
       setSending(false);
     }
   }
 
   return (
-    <form className="compose" onSubmit={send}>
-      <p>To</p>
-      <ul>
-        {recipients.map((row) => (
-          <li key={row.id}>{row.name}</li>
-        ))}
-      </ul>
+    <form className="card compose" onSubmit={send}>
+      <div>
+        <span className="label">
+          <Bi en="To" zh="收件裝置" />
+        </span>
+        <ul className="targets">
+          {recipients.map((row) => (
+            <li key={row.id}>{row.name}</li>
+          ))}
+        </ul>
+      </div>
       {texts.map((text, index) => (
-        <div key={index}>
+        <div className="text" key={index}>
           <textarea
             aria-label={`Text ${index + 1}`}
             value={text}
@@ -72,56 +102,66 @@ export function Compose({ recipients, maxBytes }: { recipients: Recipient[]; max
           {texts.length > 1 ? (
             <button
               type="button"
+              className="quiet"
               onClick={() => setTexts(texts.filter((_, item) => item !== index))}
             >
-              Remove text
+              <Bi en="Remove text" zh="移除文字" />
             </button>
           ) : null}
         </div>
       ))}
-      <button type="button" onClick={() => setTexts(texts.concat(""))}>
-        Add text
-      </button>
-      <label className="file">
-        Add files
-        <input
-          type="file"
-          multiple
-          aria-label="Files"
-          onChange={(event) => {
-            const picked = Array.from(event.target.files ?? []);
-            event.target.value = "";
-            if (picked.length) setFiles((current) => current.concat(picked));
-          }}
-        />
-      </label>
+      <div className="adders">
+        <button type="button" className="quiet" onClick={() => setTexts(texts.concat(""))}>
+          <Bi en="Add text" zh="新增文字" />
+        </button>
+        <label className="quiet file">
+          <Bi en="Add files" zh="新增檔案" />
+          <input
+            type="file"
+            multiple
+            aria-label="Files"
+            onChange={(event) => {
+              const picked = Array.from(event.target.files ?? []);
+              event.target.value = "";
+              if (picked.length) setFiles((current) => current.concat(picked));
+            }}
+          />
+        </label>
+      </div>
       {files.length ? (
-        <ul>
+        <ul className="files">
           {files.map((file, index) => (
             <li key={`${file.name}-${file.lastModified}-${index}`}>
-              {file.name}
-              {file.type ? ` ${file.type}` : ""}
+              <span>
+                {file.name}
+                {file.type ? <span className="user"> {file.type}</span> : null}
+              </span>
               <button
                 type="button"
+                className="quiet"
                 onClick={() => setFiles(files.filter((_, item) => item !== index))}
               >
-                Remove file
+                <Bi en="Remove file" zh="移除檔案" />
               </button>
             </li>
           ))}
         </ul>
       ) : null}
-      <label>
-        PIN
+      <label className="field">
+        <span className="label">
+          <Bi en="PIN (optional)" zh="PIN（選填）" />
+        </span>
         <input
           type="password"
           value={pin}
           autoComplete="off"
           onChange={(event) => setPin(event.target.value)}
         />
+        <span className="hint">
+          <Bi en="It stays in this browser." zh="只留在此瀏覽器。" />
+        </span>
       </label>
-      <p>Optional. It stays in this browser.</p>
-      <div role="radiogroup" aria-label="Keep for">
+      <div className="keep" role="radiogroup" aria-label="Keep for 保留時間">
         {presets.map(([id, label]) => (
           <button
             key={id}
@@ -133,12 +173,14 @@ export function Compose({ recipients, maxBytes }: { recipients: Recipient[]; max
               setAt("");
             }}
           >
-            {label}
+            <Bi en={label} zh={presetZh[id] ?? label} />
           </button>
         ))}
       </div>
-      <label>
-        Or a time
+      <label className="field">
+        <span className="label">
+          <Bi en="Or a time" zh="或指定時間" />
+        </span>
         <input
           type="datetime-local"
           value={at}
@@ -146,19 +188,31 @@ export function Compose({ recipients, maxBytes }: { recipients: Recipient[]; max
           onChange={(event) => setAt(event.target.value)}
         />
       </label>
-      {at ? (
-        chosen == null ? (
-          <p>Pick a later time.</p>
+      <p className="hint">
+        {at ? (
+          chosen == null ? (
+            <Bi en="Pick a later time." zh="請選擇較晚的時間。" />
+          ) : (
+            <Bi
+              en={`Kept until ${new Date(chosen).toLocaleString()}.`}
+              zh={`保留至 ${new Date(chosen).toLocaleString()}。`}
+            />
+          )
         ) : (
-          <p>Kept until {new Date(chosen).toLocaleString()}.</p>
-        )
-      ) : (
-        <p>The timer starts when the upload finishes, then {presetLabel}.</p>
-      )}
-      <button type="submit" disabled={sending || !ready}>
-        {sending ? "Sending…" : "Send"}
+          <Bi
+            en={`The timer starts when the upload finishes, then ${presetLabel}.`}
+            zh={`上傳完成後開始計時，保留 ${presetZh[preset] ?? presetLabel}。`}
+          />
+        )}
+      </p>
+      <button type="submit" className="primary send" disabled={sending || !ready}>
+        {sending ? <Bi en="Sending…" zh="傳送中…" /> : <Bi en="Send" zh="傳送" />}
       </button>
-      {notice ? <p>{notice}</p> : null}
+      {notice ? (
+        <p className="notice" role="status">
+          <Bi en={notices[notice][0]} zh={notices[notice][1]} />
+        </p>
+      ) : null}
     </form>
   );
 }
