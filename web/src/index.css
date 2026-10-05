@@ -155,3 +155,19 @@ ul {
   margin-top: 1.25rem;
   text-align: left;
 }
+
+.inbox input {
+  width: 100%;
+  margin: 0.75rem 0 0;
+  text-align: left;
+  color: #eee;
+}
+
+.inbox li button {
+  margin: 0 0 0 0.75rem;
+}
+
+.inbox .opened p {
+  color: #eee;
+  white-space: pre-wrap;
+}

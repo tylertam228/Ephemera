@@ -13,6 +13,11 @@ type StoredDevice = LocalDevice & {
   publicCryptoKey: CryptoKey;
 };
 
+export async function loadPrivateKey(userId: string): Promise<CryptoKey | null> {
+  const row = await read(userId);
+  return row?.privateKey ?? null;
+}
+
 export async function loadDevice(userId: string): Promise<LocalDevice | null> {
   const row = await read(userId);
   if (!row?.deviceId || !row.privateKey) return null;

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Compose } from "./compose";
-import { createDevice, loadDevice } from "./device";
+import { createDevice, loadDevice, loadPrivateKey } from "./device";
+import { openDrop } from "./drop.mjs";
 
 type Me = { id: string; username: string; maxUploadMb: number };
 type Device = { id: string; name: string };
@@ -104,7 +105,12 @@ export function App() {
           {device === undefined ? null : device ? (
             <>
               <p>{device.name}</p>
-              <Inbox drops={inbox} />
+              <Inbox
+                drops={inbox}
+                deviceId={device.id}
+                userId={me.id}
+                onClaimed={(id) => setInbox((current) => current?.filter((row) => row.id !== id))}
+              />
               {recipients === undefined ? null : recipients.length === 0 ? (
                 <p>Sign in on another device with this account before sending.</p>
               ) : (
@@ -133,12 +139,70 @@ export function App() {
   );
 }
 
-export function Inbox({ drops }: { drops: Drop[] | undefined }) {
-  if (!drops) return null;
+type Opened = { texts: string[]; files: { name: string; type: string }[] };
+
+export function Inbox({
+  drops,
+  deviceId,
+  userId,
+  onClaimed,
+}: {
+  drops: Drop[] | undefined;
+  deviceId: string;
+  userId: string;
+  onClaimed: (id: string) => void;
+}) {
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [opened, setOpened] = useState<Opened | null>(null);
+  if (!drops && !opened) return null;
+
+  async function open(drop: Drop) {
+    if (busy) return;
+    if (drop.pin && !pin) {
+      setNotice("Enter the PIN.");
+      return;
+    }
+    setBusy(true);
+    setNotice("");
+    try {
+      const metaRes = await fetch(`/api/drops/${drop.id}?device=${encodeURIComponent(deviceId)}`);
+      if (!metaRes.ok) throw new Error("gone");
+      const meta = (await metaRes.json()) as { pinSalt: string | null; sealedKey: string };
+      const blobRes = await fetch(`/api/drops/${drop.id}/blob?device=${encodeURIComponent(deviceId)}`);
+      if (!blobRes.ok) throw new Error("gone");
+      const privateKey = await loadPrivateKey(userId);
+      if (!privateKey) throw new Error("key");
+      const result = await openDrop({
+        privateKey,
+        pin,
+        pinSalt: meta.pinSalt,
+        sealedKey: meta.sealedKey,
+        bytes: new Uint8Array(await blobRes.arrayBuffer()),
+      });
+      const claim = await fetch(`/api/drops/${drop.id}?device=${encodeURIComponent(deviceId)}`, {
+        method: "DELETE",
+      });
+      if (!claim.ok) throw new Error("claim");
+      setPin("");
+      setOpened({
+        texts: result.texts,
+        files: result.files.map((file) => ({ name: file.name, type: file.type })),
+      });
+      onClaimed(drop.id);
+    } catch (err) {
+      const missed = err instanceof Error && (err.message === "gone" || err.message === "claim" || err.message === "key");
+      setNotice(drop.pin && !missed ? "Wrong PIN." : "Could not open.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="inbox">
       <p>Inbox</p>
-      {drops.length === 0 ? (
+      {!drops ? null : drops.length === 0 ? (
         <p>Nothing waiting.</p>
       ) : (
         <ul>
@@ -146,10 +210,47 @@ export function Inbox({ drops }: { drops: Drop[] | undefined }) {
             <li key={drop.id}>
               Until {new Date(drop.expiresAt).toLocaleString()}
               {drop.pin ? ", PIN required" : ""}
+              {drop.pin ? (
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void open(drop);
+                  }}
+                >
+                  <input
+                    type="password"
+                    value={pin}
+                    autoComplete="off"
+                    aria-label="PIN"
+                    onChange={(event) => setPin(event.target.value)}
+                  />
+                  <button type="submit" disabled={busy}>
+                    Open
+                  </button>
+                </form>
+              ) : (
+                <button type="button" disabled={busy} onClick={() => void open(drop)}>
+                  Open
+                </button>
+              )}
             </li>
           ))}
         </ul>
       )}
+      {notice ? <p>{notice}</p> : null}
+      {opened ? (
+        <div className="opened">
+          {opened.texts.map((text, index) => (
+            <p key={index}>{text}</p>
+          ))}
+          {opened.files.map((file, index) => (
+            <p key={index}>
+              {file.name}
+              {file.type ? ` ${file.type}` : ""}
+            </p>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
