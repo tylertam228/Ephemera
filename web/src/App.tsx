@@ -139,7 +139,8 @@ export function App() {
   );
 }
 
-type Opened = { texts: string[]; files: { name: string; type: string }[] };
+type OpenedFile = { name: string; type: string; bytes: Uint8Array };
+type Opened = { texts: string[]; files: OpenedFile[] };
 
 export function Inbox({
   drops,
@@ -186,10 +187,7 @@ export function Inbox({
       });
       if (!claim.ok) throw new Error("claim");
       setPin("");
-      setOpened({
-        texts: result.texts,
-        files: result.files.map((file) => ({ name: file.name, type: file.type })),
-      });
+      setOpened({ texts: result.texts, files: result.files });
       onClaimed(drop.id);
     } catch (err) {
       const missed = err instanceof Error && (err.message === "gone" || err.message === "claim" || err.message === "key");
@@ -238,19 +236,56 @@ export function Inbox({
         </ul>
       )}
       {notice ? <p>{notice}</p> : null}
-      {opened ? (
-        <div className="opened">
-          {opened.texts.map((text, index) => (
-            <p key={index}>{text}</p>
-          ))}
-          {opened.files.map((file, index) => (
-            <p key={index}>
-              {file.name}
-              {file.type ? ` ${file.type}` : ""}
-            </p>
-          ))}
-        </div>
-      ) : null}
+      {opened ? <Review texts={opened.texts} files={opened.files} /> : null}
     </section>
+  );
+}
+
+export function Review({ texts, files }: { texts: string[]; files: OpenedFile[] }) {
+  const [copied, setCopied] = useState("");
+
+  async function copy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied("Copied.");
+    } catch {
+      setCopied("Could not copy.");
+    }
+  }
+
+  function download(file: OpenedFile) {
+    const url = URL.createObjectURL(
+      new Blob([file.bytes.slice()], { type: file.type || "application/octet-stream" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name || "download";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  return (
+    <div className="opened">
+      {texts.map((text, index) => (
+        <div key={index}>
+          <p>{text}</p>
+          <button type="button" onClick={() => void copy(text)}>
+            Copy
+          </button>
+        </div>
+      ))}
+      {files.map((file, index) => (
+        <p key={index}>
+          {file.name}
+          {file.type ? ` ${file.type}` : ""}
+          <button type="button" onClick={() => download(file)}>
+            Download
+          </button>
+        </p>
+      ))}
+      {copied ? <p>{copied}</p> : null}
+    </div>
   );
 }

@@ -171,3 +171,7 @@ ul {
   color: #eee;
   white-space: pre-wrap;
 }
+
+.inbox .opened button {
+  margin-left: 0.75rem;
+}
