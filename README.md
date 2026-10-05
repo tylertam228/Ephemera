@@ -2,7 +2,7 @@
 
 Version 1 is a burn-after-reading drop for text and files. Two machines that cannot reach each other directly both open this site, sign in with the same Discord account, and hand the payload across. The server stores ciphertext only. A drop is deleted when a recipient takes it or when its timer expires. There is no content backup.
 
-One command builds the browser app and serves it. Discord sign-in and device keys are in place. Encryption is not implemented yet. This document defines the version 1 scope, the encryption flow, and the local Discord setup.
+One command builds the browser app and serves it. Discord sign-in, device keys, and the recipient check are in place. Encryption is not implemented yet. This document defines the version 1 scope, the encryption flow, and the local Discord setup.
 
 ## Local
 
