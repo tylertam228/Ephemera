@@ -23,7 +23,11 @@ try {
 }
 
 const root = join(repo, "web/dist");
-const port = 3000;
+const port = env.PORT == null || env.PORT === "" ? 3000 : Number(env.PORT);
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  log("error", "startup_failed", { err: "PORT" });
+  process.exit(1);
+}
 
 createServer((req, res) => {
   handleAuth(req, res, { config, db, dataDir, fetch })
