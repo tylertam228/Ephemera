@@ -116,6 +116,20 @@ test("a device public key is stored for the signed-in user only", async () => {
     assert.deepEqual(JSON.parse(list.body).map((row) => row.name), ["laptop"]);
     assert.equal(JSON.parse(list.body)[0].publicKey, undefined);
 
+    const alone = await send(port, "GET", `/api/devices?except=${saved.id}`, { cookie });
+    assert.deepEqual(JSON.parse(alone.body), []);
+    db.prepare(
+      "INSERT INTO devices (id, user_id, name, public_key, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).run("b".repeat(32), "42", "phone", "other-key", now + 1);
+    db.prepare(
+      "INSERT INTO devices (id, user_id, name, public_key, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).run("c".repeat(32), "7", "bob-phone", "bob-key", now + 2);
+    const others = await send(port, "GET", `/api/devices?except=${saved.id}`, { cookie });
+    assert.deepEqual(
+      JSON.parse(others.body).map((row) => row.name),
+      ["phone"],
+    );
+
     const text = lines.join("\n");
     assert.match(text, /msg=device_registered/);
     assert.equal(text.includes(locked.spki), false);

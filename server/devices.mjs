@@ -12,14 +12,16 @@ export async function handleDevice(req, res, { db, log = writeLog }) {
     return;
   }
   if (req.method === "GET") {
+    const except = new URL(req.url ?? "/", "http://localhost").searchParams.get("except") ?? "";
+    const rows = db
+      .prepare(
+        "SELECT id, name, created_at AS createdAt FROM devices WHERE user_id = ? ORDER BY created_at",
+      )
+      .all(user.id);
     json(
       res,
       200,
-      db
-        .prepare(
-          "SELECT id, name, created_at AS createdAt FROM devices WHERE user_id = ? ORDER BY created_at",
-        )
-        .all(user.id),
+      rows.filter((row) => row.id !== except),
     );
     return;
   }
