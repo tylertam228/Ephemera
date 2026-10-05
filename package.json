@@ -1,0 +1,8 @@
+{
+  "name": "ephemera",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix web install && npm --prefix web run build && node server/index.mjs",
+    "test": "node --test server/spa.test.mjs"
+  }
+}
