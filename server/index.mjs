@@ -40,6 +40,6 @@ createServer((req, res) => {
         res.destroy();
       }
     });
-}).listen(port, () => {
+}).listen(port, "127.0.0.1", () => {
   log("info", "listening", { port });
 });
