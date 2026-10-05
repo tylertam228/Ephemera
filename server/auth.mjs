@@ -145,7 +145,14 @@ async function discordUser(config, code, verifier, fetchImpl) {
   if (!/^\d+$/.test(me.id ?? "") || typeof me.username !== "string" || !me.username) {
     throw new Error("discord profile failed");
   }
-  return { id: me.id, username: me.username };
+  return { id: me.id, username: shownName(me.global_name) || me.username };
+}
+
+function shownName(value) {
+  if (typeof value !== "string") return "";
+  const name = value.trim();
+  if (!name || name.length > 32 || /[\u0000-\u001f]/.test(name)) return "";
+  return name;
 }
 
 function logout(req, res, db, log) {

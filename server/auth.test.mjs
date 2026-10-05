@@ -70,7 +70,7 @@ test("discord sign-in stores a session hash and logout removes it", async () => 
       return { ok: true, json: async () => ({ access_token: "access-token" }) };
     }
     assert.equal(opts.headers.authorization, "Bearer access-token");
-    return { ok: true, json: async () => ({ id: "42", username: "ada" }) };
+    return { ok: true, json: async () => ({ id: "42", username: "ada", global_name: "Ada" }) };
   };
   const server = await listen(db, fetchImpl, lines);
   const { port } = server.address();
@@ -103,11 +103,11 @@ test("discord sign-in stores a session hash and logout removes it", async () => 
     assert.equal(stored.token_hash, hashToken(token));
     assert.notEqual(stored.token_hash, token);
     assert.equal(stored.user_id, "42");
-    assert.equal(db.prepare("SELECT username FROM users WHERE id = ?").get("42").username, "ada");
+    assert.equal(db.prepare("SELECT username FROM users WHERE id = ?").get("42").username, "Ada");
 
     const who = await send(port, "GET", "/api/me", `session=${token}`);
     assert.equal(who.status, 200);
-    assert.deepEqual(JSON.parse(who.body), { id: "42", username: "ada", maxUploadMb: 1024 });
+    assert.deepEqual(JSON.parse(who.body), { id: "42", username: "Ada", maxUploadMb: 1024 });
 
     const out = await send(port, "POST", "/api/auth/logout", `session=${token}`);
     assert.equal(out.status, 303);
