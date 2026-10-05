@@ -85,6 +85,30 @@ test("a drop seals to each recipient and a wrong PIN does not open it", async ()
   assert.deepEqual(read.files, []);
 });
 
+test("a browser File is encrypted from its contents", async () => {
+  const ada = await person();
+  const payload = new Uint8Array([1, 2, 3, 4, 5]);
+  const file = new File([payload], "pic.bin", { type: "application/octet-stream" });
+  assert.equal(typeof file.bytes, "function");
+  const prepared = await prepareDrop({
+    recipients: [{ id: "a".repeat(32), publicKey: ada.publicKey }],
+    texts: [],
+    files: [file],
+    chunkSize: 2,
+  });
+  const frames = [];
+  for await (const frame of prepared.frames) frames.push(frame);
+  assert.equal(frames.length, 1 + Math.ceil(payload.length / 2));
+  const opened = await openDrop({
+    privateKey: ada.privateKey,
+    pinSalt: null,
+    sealedKey: prepared.keys[0].sealedKey,
+    bytes: concat(frames),
+  });
+  assert.equal(opened.files[0].name, "pic.bin");
+  assert.deepEqual(opened.files[0].bytes, payload);
+});
+
 test("upload posts the ciphertext as one buffer", async () => {
   const ada = await person();
   const prepared = await prepareDrop({

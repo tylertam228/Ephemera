@@ -215,10 +215,11 @@ async function encryptFrame(key, index, plain) {
 }
 
 async function* plainChunks(file, chunkSize) {
-  const size = fileSize(file);
-  if (file.bytes) {
+  const raw = rawBytes(file);
+  const size = raw ? raw.byteLength : file.size;
+  if (raw) {
     for (let offset = 0; offset < size; offset += chunkSize) {
-      yield file.bytes.subarray(offset, Math.min(offset + chunkSize, size));
+      yield raw.subarray(offset, Math.min(offset + chunkSize, size));
     }
     return;
   }
@@ -227,8 +228,13 @@ async function* plainChunks(file, chunkSize) {
   }
 }
 
+function rawBytes(file) {
+  return file.bytes instanceof Uint8Array ? file.bytes : null;
+}
+
 function fileSize(file) {
-  return file.bytes ? file.bytes.byteLength : file.size;
+  const raw = rawBytes(file);
+  return raw ? raw.byteLength : file.size;
 }
 
 function concat(parts) {
