@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Compose } from "./compose";
 import { createDevice, loadDevice } from "./device";
 
 type Me = { id: string; username: string };
@@ -96,11 +97,7 @@ export function App() {
               {recipients === undefined ? null : recipients.length === 0 ? (
                 <p>Sign in on another device with this account before sending.</p>
               ) : (
-                <ul>
-                  {recipients.map((row) => (
-                    <li key={row.id}>{row.name}</li>
-                  ))}
-                </ul>
+                <Compose recipients={recipients} />
               )}
             </>
           ) : (
