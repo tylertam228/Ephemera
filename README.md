@@ -2,7 +2,7 @@
 
 Version 1 is a burn-after-reading drop for text and files. Two machines that cannot reach each other directly both open this site, sign in with the same Discord account, and hand the payload across. The server stores ciphertext only. A drop is deleted when a recipient takes it or when its timer expires. There is no content backup.
 
-One command builds the browser app and serves it. Discord sign-in, device keys, the recipient check, the compose screen, encrypted upload, the inbox, claiming a drop, and the review screen are in place. The expiry sweep is not implemented yet. This document defines the version 1 scope, the encryption flow, and the local Discord setup.
+One command builds the browser app and serves it. Discord sign-in, device keys, the recipient check, the compose screen, encrypted upload, the inbox, claiming a drop, the review screen, and the expiry sweep are in place. Continuous delivery is not set up. This document defines the version 1 scope, the encryption flow, and the local Discord setup.
 
 ## Local
 
@@ -24,7 +24,7 @@ That installs the browser dependencies, builds them, and serves the build at htt
 - After decrypt, the recipient gets a review screen and nothing is saved automatically. Each text block is shown in full with a Copy button. Each file is listed with its filename and type, plus a Download button. Copy and download are optional. Closing the page discards whatever is still only in the browser. File bytes are not rendered inline.
 - Files are encrypted in chunks. The server cap is `MAX_UPLOAD_MB`, default 1024 (1GB per drop). The operator can raise or lower it. The cap protects disk space.
 
-The server keeps ciphertext, the content key sealed for each target device, the expiry time, and the public salt used for a PIN. Plaintext, the content key, the PIN, and device private keys stay in the browser. Device public keys and sealed content keys are stored as themselves. Hashing either one would leave the other device unable to open the drop. The Discord client secret stays in the environment and is not written to the database. Sign-in will store the SHA-256 of the session token, not the token.
+The server keeps ciphertext, the content key sealed for each target device, the expiry time, and the public salt used for a PIN. Plaintext, the content key, the PIN, and device private keys stay in the browser. Device public keys and sealed content keys are stored as themselves. Hashing either one would leave the other device unable to open the drop. The Discord client secret stays in the environment and is not written to the database. Sign-in stores the SHA-256 of the session token, not the token. A sweep deletes expired ciphertext and rows. It does not wait for the recipient to open the drop.
 
 ## Example workflow
 
@@ -69,6 +69,7 @@ DISCORD_CLIENT_SECRET=
 DISCORD_PUBLIC_KEY=
 AUTH_URL=http://localhost:3000
 MAX_UPLOAD_MB=1024
+PORT=3000
 ```
 
 | Variable | Source |
@@ -78,6 +79,7 @@ MAX_UPLOAD_MB=1024
 | `DISCORD_PUBLIC_KEY` | Application public key. Loaded at startup. Sign-in and transfer do not use it, and it is not written to SQLite. |
 | `AUTH_URL` | Public origin of this site. Local: `http://localhost:3000`. VPS: `https://your.domain`. |
 | `MAX_UPLOAD_MB` | Maximum drop size in megabytes. Default `1024`. |
+| `PORT` | Port on `127.0.0.1`. Default `3000`. |
 
 Sign-in is Discord OAuth2 with the `identify` scope only. Do not add a Bot to this application. Leave the OAuth2 URL Generator unused; the site builds the authorize URL itself.
 
@@ -97,6 +99,6 @@ https://your.domain/api/auth/callback/discord
 
 ## Deployment
 
-Version 1 runs on a private VPS. The browser app is Vite, React, and TypeScript. A Node.js server serves that build and, in later tasks, handles sign-in, upload, and deletion. It has no decrypt function. Metadata is `data/ephemera.sqlite`. Ciphertext files are `data/blobs/<random id>`. Both paths are gitignored. Docker Compose with Caddy serves HTTPS.
+Version 1 runs on a private VPS. The browser app is Vite, React, and TypeScript. A Node.js server serves that build and handles sign-in, upload, claim, and expiry. It has no decrypt function. It listens on `127.0.0.1`. Metadata is `data/ephemera.sqlite`. Ciphertext files are `data/blobs/<random id>`. Both paths are gitignored. Caddy terminates HTTPS and reverse-proxies to `PORT`. Continuous delivery is not set up.
 
 Leave provider-wide disk snapshots off for the data volume. A snapshot would retain ciphertext after a claim. That ciphertext is still unreadable without the recipient's private key, and it breaks the requirement that a taken drop leave no copy on disk.
