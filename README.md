@@ -24,7 +24,7 @@ That installs the browser dependencies, builds them, and serves the build at htt
 - After decrypt, the recipient gets a review screen and nothing is saved automatically. Each text block is shown in full with a Copy button. Each file is listed with its filename and type, plus a Download button. Copy and download are optional. Closing the page discards whatever is still only in the browser. File bytes are not rendered inline.
 - Files are encrypted in chunks. The server cap is `MAX_UPLOAD_MB`, default 1024 (1GB per drop). The operator can raise or lower it. The cap protects disk space.
 
-The server keeps ciphertext, the content key sealed for each target device, the expiry time, and the public salt used for a PIN. Plaintext, the content key, the PIN, and device private keys stay in the browser.
+The server keeps ciphertext, the content key sealed for each target device, the expiry time, and the public salt used for a PIN. Plaintext, the content key, the PIN, and device private keys stay in the browser. Device public keys and sealed content keys are stored as themselves. Hashing either one would leave the other device unable to open the drop. The Discord client secret stays in the environment and is not written to the database. Sign-in will store the SHA-256 of the session token, not the token.
 
 ## Example workflow
 
@@ -74,8 +74,8 @@ MAX_UPLOAD_MB=1024
 | Variable | Source |
 | --- | --- |
 | `DISCORD_CLIENT_ID` | OAuth2 Client ID. It is the same value as the Application ID. |
-| `DISCORD_CLIENT_SECRET` | OAuth2 Client Secret. |
-| `DISCORD_PUBLIC_KEY` | Application public key. Version 1 stores it and does not read it during sign-in or transfer. |
+| `DISCORD_CLIENT_SECRET` | OAuth2 Client Secret. It stays in the environment. It is not hashed and not written to SQLite, because Discord must receive the secret itself. |
+| `DISCORD_PUBLIC_KEY` | Application public key. Loaded at startup. Sign-in and transfer do not use it, and it is not written to SQLite. |
 | `AUTH_URL` | Public origin of this site. Local: `http://localhost:3000`. VPS: `https://your.domain`. |
 | `MAX_UPLOAD_MB` | Maximum drop size in megabytes. Default `1024`. |
 
@@ -97,6 +97,6 @@ https://your.domain/api/auth/callback/discord
 
 ## Deployment
 
-Version 1 runs on a private VPS. The browser app is Vite, React, and TypeScript. A Node.js server serves that build and, in later tasks, handles sign-in, upload, and deletion. It has no decrypt function. SQLite holds metadata, a local directory holds ciphertext, and Docker Compose with Caddy serves HTTPS.
+Version 1 runs on a private VPS. The browser app is Vite, React, and TypeScript. A Node.js server serves that build and, in later tasks, handles sign-in, upload, and deletion. It has no decrypt function. Metadata is `data/ephemera.sqlite`. Ciphertext files are `data/blobs/<random id>`. Both paths are gitignored. Docker Compose with Caddy serves HTTPS.
 
 Leave provider-wide disk snapshots off for the data volume. A snapshot would retain ciphertext after a claim. That ciphertext is still unreadable without the recipient's private key, and it breaks the requirement that a taken drop leave no copy on disk.
