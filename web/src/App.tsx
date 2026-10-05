@@ -16,6 +16,7 @@ export function App() {
   const [error, setError] = useState(false);
   const [recipients, setRecipients] = useState<Recipient[] | undefined>(undefined);
   const [inbox, setInbox] = useState<Drop[] | undefined>(undefined);
+  const [fresh, setFresh] = useState(false);
   const failed = new URLSearchParams(window.location.search).get("auth") === "failed";
 
   useEffect(() => {
@@ -55,6 +56,8 @@ export function App() {
   useEffect(() => {
     if (!device) return;
     let gone = false;
+    let primed = false;
+    let known = new Set<string>();
     setInbox(undefined);
     const load = () => {
       fetch(`/api/devices?except=${encodeURIComponent(device.id)}`)
@@ -66,15 +69,37 @@ export function App() {
       fetch(`/api/drops?device=${encodeURIComponent(device.id)}`)
         .then(async (res) => {
           if (!res.ok || gone) return;
-          setInbox((await res.json()) as Drop[]);
+          const next = (await res.json()) as Drop[];
+          const arrived = primed && next.some((row) => !known.has(row.id));
+          known = new Set(next.map((row) => row.id));
+          primed = true;
+          setInbox(next);
+          setFresh(arrived);
+          if (arrived && typeof Notification !== "undefined" && Notification.permission === "granted") {
+            const note = new Notification("Ephemera", {
+              body: "A new drop is waiting. 有新的便條，打開即可查看。",
+            });
+            note.onclick = () => {
+              window.focus();
+              note.close();
+            };
+          }
         })
         .catch(() => {});
     };
     load();
-    window.addEventListener("focus", load);
+    const timer = setInterval(load, 5000);
+    const onFocus = () => load();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       gone = true;
-      window.removeEventListener("focus", load);
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [device]);
 
@@ -119,14 +144,22 @@ export function App() {
               {me.username}
               {device ? <span className="user"> · {device.name}</span> : null}
             </span>
-            <form action="/api/auth/logout" method="post">
-              <button type="submit" className="quiet">
-                <Bi en="Sign out" zh="登出" />
-              </button>
-            </form>
+            <span className="who-actions">
+              <Alerts />
+              <form action="/api/auth/logout" method="post">
+                <button type="submit" className="quiet">
+                  <Bi en="Sign out" zh="登出" />
+                </button>
+              </form>
+            </span>
           </div>
           {device === undefined ? null : device ? (
             <>
+              {fresh ? (
+                <p className="notice" role="status">
+                  <Bi en="A new drop is in the inbox." zh="收件匣有新的便條。" />
+                </p>
+              ) : null}
               <Inbox
                 drops={inbox}
                 deviceId={device.id}
@@ -170,5 +203,22 @@ export function App() {
         </p>
       )}
     </main>
+  );
+}
+
+function Alerts() {
+  const supported = typeof Notification !== "undefined";
+  const [permission, setPermission] = useState(supported ? Notification.permission : "denied");
+  if (!supported || permission !== "default") return null;
+  return (
+    <button
+      type="button"
+      className="quiet"
+      onClick={() => {
+        void Notification.requestPermission().then(setPermission);
+      }}
+    >
+      <Bi en="Notify this device" zh="通知此裝置" />
+    </button>
   );
 }
