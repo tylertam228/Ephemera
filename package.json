@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "npm install && npm --prefix web install && npm --prefix web run build && node server/index.mjs",
-    "test": "node --test server/*.test.mjs"
+    "test": "node --test server/*.test.mjs web/src/*.test.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1"
