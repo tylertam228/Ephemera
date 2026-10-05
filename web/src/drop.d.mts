@@ -12,6 +12,7 @@ export function prepareDrop(input: {
 }>;
 
 export function uploadDrop(input: {
+  senderDeviceId: string;
   pinSalt: string | null;
   keys: { deviceId: string; sealedKey: string }[];
   frames: AsyncGenerator<Uint8Array>;

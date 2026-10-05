@@ -103,6 +103,7 @@ test("upload posts the ciphertext as one buffer", async () => {
   };
   try {
     const saved = await uploadDrop({
+      senderDeviceId: "f".repeat(32),
       pinSalt: prepared.pinSalt,
       keys: prepared.keys,
       frames: prepared.frames,
@@ -114,4 +115,7 @@ test("upload posts the ciphertext as one buffer", async () => {
   }
   assert.ok(body instanceof Uint8Array);
   assert.equal(body.byteLength > 4, true);
+  const jsonLength = new DataView(body.buffer, body.byteOffset, 4).getUint32(0);
+  const meta = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + jsonLength)));
+  assert.equal(meta.senderDeviceId, "f".repeat(32));
 });

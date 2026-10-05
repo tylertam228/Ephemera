@@ -50,8 +50,8 @@ export async function prepareDrop({
   return { pinSalt, keys, frames: frames(contentKey, manifest, files, chunkSize, maxBytes) };
 }
 
-export async function uploadDrop({ pinSalt, keys, frames, keepMs, expiresAt }) {
-  const meta = { pinSalt, keys };
+export async function uploadDrop({ senderDeviceId, pinSalt, keys, frames, keepMs, expiresAt }) {
+  const meta = { senderDeviceId, pinSalt, keys };
   if (keepMs != null) meta.keepMs = keepMs;
   else meta.expiresAt = expiresAt;
   const parts = [encodePrefix(meta)];
