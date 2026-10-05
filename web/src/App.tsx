@@ -5,6 +5,7 @@ import { createDevice, loadDevice } from "./device";
 type Me = { id: string; username: string; maxUploadMb: number };
 type Device = { id: string; name: string };
 type Recipient = Device & { publicKey: string };
+type Drop = { id: string; expiresAt: number; createdAt: number; pin: boolean };
 
 export function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
@@ -12,6 +13,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const [recipients, setRecipients] = useState<Recipient[] | undefined>(undefined);
+  const [inbox, setInbox] = useState<Drop[] | undefined>(undefined);
   const failed = new URLSearchParams(window.location.search).get("auth") === "failed";
 
   useEffect(() => {
@@ -51,11 +53,18 @@ export function App() {
   useEffect(() => {
     if (!device) return;
     let gone = false;
+    setInbox(undefined);
     const load = () => {
       fetch(`/api/devices?except=${encodeURIComponent(device.id)}`)
         .then(async (res) => {
           if (!res.ok || gone) return;
           setRecipients((await res.json()) as Recipient[]);
+        })
+        .catch(() => {});
+      fetch(`/api/drops?device=${encodeURIComponent(device.id)}`)
+        .then(async (res) => {
+          if (!res.ok || gone) return;
+          setInbox((await res.json()) as Drop[]);
         })
         .catch(() => {});
     };
@@ -95,6 +104,7 @@ export function App() {
           {device === undefined ? null : device ? (
             <>
               <p>{device.name}</p>
+              <Inbox drops={inbox} />
               {recipients === undefined ? null : recipients.length === 0 ? (
                 <p>Sign in on another device with this account before sending.</p>
               ) : (
@@ -120,5 +130,26 @@ export function App() {
         </p>
       )}
     </main>
+  );
+}
+
+export function Inbox({ drops }: { drops: Drop[] | undefined }) {
+  if (!drops) return null;
+  return (
+    <section className="inbox">
+      <p>Inbox</p>
+      {drops.length === 0 ? (
+        <p>Nothing waiting.</p>
+      ) : (
+        <ul>
+          {drops.map((drop) => (
+            <li key={drop.id}>
+              Until {new Date(drop.expiresAt).toLocaleString()}
+              {drop.pin ? ", PIN required" : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

@@ -150,3 +150,8 @@ ul {
 .compose li button {
   margin: 0 0 0 0.75rem;
 }
+
+.inbox {
+  margin-top: 1.25rem;
+  text-align: left;
+}
