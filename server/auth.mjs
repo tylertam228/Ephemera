@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { hashToken } from "./db.mjs";
 import { handleDevice } from "./devices.mjs";
+import { handleDrop } from "./drops.mjs";
 import { log as writeLog } from "./log.mjs";
 import { readCookie, sessionUser } from "./session.mjs";
 
@@ -28,7 +29,7 @@ export function authorizeUrl(config, { challenge, state }) {
   return url;
 }
 
-export async function handleAuth(req, res, { config, db, fetch: fetchImpl, log = writeLog }) {
+export async function handleAuth(req, res, { config, db, dataDir, fetch: fetchImpl, log = writeLog }) {
   const url = new URL(req.url ?? "/", config.authUrl);
   if (!url.pathname.startsWith("/api/")) return false;
   const started = Date.now();
@@ -55,11 +56,15 @@ export async function handleAuth(req, res, { config, db, fetch: fetchImpl, log =
       return true;
     }
     if (req.method === "GET" && url.pathname === "/api/me") {
-      me(req, res, db);
+      me(req, res, db, config);
       return true;
     }
     if (url.pathname === "/api/devices") {
       await handleDevice(req, res, { db, log });
+      return true;
+    }
+    if (url.pathname === "/api/drops") {
+      await handleDrop(req, res, { db, config, dataDir, log });
       return true;
     }
     res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
@@ -152,7 +157,7 @@ function logout(req, res, db, log) {
   res.end();
 }
 
-function me(req, res, db) {
+function me(req, res, db, config) {
   const row = sessionUser(req, db);
   if (!row) {
     res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
@@ -160,7 +165,7 @@ function me(req, res, db) {
     return;
   }
   res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-  res.end(JSON.stringify({ id: row.id, username: row.username }));
+  res.end(JSON.stringify({ id: row.id, username: row.username, maxUploadMb: config.maxUploadMb }));
 }
 
 function fail(res) {

@@ -107,7 +107,7 @@ test("discord sign-in stores a session hash and logout removes it", async () => 
 
     const who = await send(port, "GET", "/api/me", `session=${token}`);
     assert.equal(who.status, 200);
-    assert.deepEqual(JSON.parse(who.body), { id: "42", username: "ada" });
+    assert.deepEqual(JSON.parse(who.body), { id: "42", username: "ada", maxUploadMb: 1024 });
 
     const out = await send(port, "POST", "/api/auth/logout", `session=${token}`);
     assert.equal(out.status, 303);
