@@ -1,25 +1,57 @@
-import { useState } from "react";
+import { FormEvent, useState } from "react";
+import { prepareDrop, uploadDrop } from "./drop.mjs";
 import { expiry, presets } from "./retention.mjs";
 
-type Recipient = { id: string; name: string };
+type Recipient = { id: string; name: string; publicKey: string };
 
-export function Compose({ recipients }: { recipients: Recipient[] }) {
+export function Compose({ recipients, maxBytes }: { recipients: Recipient[]; maxBytes: number }) {
   const [texts, setTexts] = useState([""]);
   const [files, setFiles] = useState<File[]>([]);
   const [pin, setPin] = useState("");
   const [preset, setPreset] = useState("1m");
   const [at, setAt] = useState("");
+  const [sending, setSending] = useState(false);
+  const [notice, setNotice] = useState("");
   const picked = at ? new Date(at).getTime() : null;
   const chosen = expiry({ preset, at: picked }, Date.now());
-  const presetLabel = presets.find((row) => row[0] === preset)?.[1] ?? "";
+  const presetRow = presets.find((row) => row[0] === preset);
+  const presetLabel = presetRow?.[1] ?? "";
+  const ready = (texts.some((text) => text.trim()) || files.length > 0) && (!at || chosen != null);
+
+  async function send(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!ready || sending || !presetRow) return;
+    setSending(true);
+    setNotice("");
+    try {
+      const prepared = await prepareDrop({
+        recipients,
+        texts: texts.filter((text) => text.trim()),
+        files,
+        pin,
+        maxBytes,
+      });
+      await uploadDrop({
+        pinSalt: prepared.pinSalt,
+        keys: prepared.keys,
+        frames: prepared.frames,
+        ...(at ? { expiresAt: picked ?? undefined } : { keepMs: presetRow[2] }),
+      });
+      setTexts([""]);
+      setFiles([]);
+      setPin("");
+      setAt("");
+      setPreset("1m");
+      setNotice("Sent.");
+    } catch (err) {
+      setNotice(err instanceof Error && "code" in err && err.code === "cap" ? "That drop is too large." : "Could not send.");
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
-    <form
-      className="compose"
-      onSubmit={(event) => {
-        event.preventDefault();
-      }}
-    >
+    <form className="compose" onSubmit={send}>
       <p>To</p>
       <ul>
         {recipients.map((row) => (
@@ -123,6 +155,10 @@ export function Compose({ recipients }: { recipients: Recipient[] }) {
       ) : (
         <p>The timer starts when the upload finishes, then {presetLabel}.</p>
       )}
+      <button type="submit" disabled={sending || !ready}>
+        {sending ? "Sending…" : "Send"}
+      </button>
+      {notice ? <p>{notice}</p> : null}
     </form>
   );
 }

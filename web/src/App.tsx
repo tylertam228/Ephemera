@@ -2,15 +2,16 @@ import { FormEvent, useEffect, useState } from "react";
 import { Compose } from "./compose";
 import { createDevice, loadDevice } from "./device";
 
-type Me = { id: string; username: string };
+type Me = { id: string; username: string; maxUploadMb: number };
 type Device = { id: string; name: string };
+type Recipient = Device & { publicKey: string };
 
 export function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [device, setDevice] = useState<Device | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
-  const [recipients, setRecipients] = useState<Device[] | undefined>(undefined);
+  const [recipients, setRecipients] = useState<Recipient[] | undefined>(undefined);
   const failed = new URLSearchParams(window.location.search).get("auth") === "failed";
 
   useEffect(() => {
@@ -54,7 +55,7 @@ export function App() {
       fetch(`/api/devices?except=${encodeURIComponent(device.id)}`)
         .then(async (res) => {
           if (!res.ok || gone) return;
-          setRecipients((await res.json()) as Device[]);
+          setRecipients((await res.json()) as Recipient[]);
         })
         .catch(() => {});
     };
@@ -97,7 +98,7 @@ export function App() {
               {recipients === undefined ? null : recipients.length === 0 ? (
                 <p>Sign in on another device with this account before sending.</p>
               ) : (
-                <Compose recipients={recipients} />
+                <Compose recipients={recipients} maxBytes={me.maxUploadMb * 1024 * 1024} />
               )}
             </>
           ) : (
