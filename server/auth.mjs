@@ -1,6 +1,8 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { hashToken } from "./db.mjs";
+import { handleDevice } from "./devices.mjs";
 import { log as writeLog } from "./log.mjs";
+import { readCookie, sessionUser } from "./session.mjs";
 
 const SESSION = "session";
 const PKCE = "pkce";
@@ -54,6 +56,10 @@ export async function handleAuth(req, res, { config, db, fetch: fetchImpl, log =
     }
     if (req.method === "GET" && url.pathname === "/api/me") {
       me(req, res, db);
+      return true;
+    }
+    if (url.pathname === "/api/devices") {
+      await handleDevice(req, res, { db, log });
       return true;
     }
     res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
@@ -147,18 +153,7 @@ function logout(req, res, db, log) {
 }
 
 function me(req, res, db) {
-  const token = readCookie(req, SESSION);
-  const now = Date.now();
-  db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now);
-  const row = token
-    ? db
-        .prepare(
-          `SELECT users.id AS id, users.username AS username
-           FROM sessions JOIN users ON users.id = sessions.user_id
-           WHERE sessions.token_hash = ? AND sessions.expires_at > ?`,
-        )
-        .get(hashToken(token), now)
-    : undefined;
+  const row = sessionUser(req, db);
   if (!row) {
     res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
     res.end("{}");
@@ -179,21 +174,6 @@ function readPkce(req) {
   const dot = raw.indexOf(".");
   if (dot <= 0) return null;
   return { state: raw.slice(0, dot), verifier: raw.slice(dot + 1) };
-}
-
-function readCookie(req, name) {
-  const header = req.headers.cookie ?? "";
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() !== name) continue;
-    try {
-      return decodeURIComponent(part.slice(eq + 1).trim());
-    } catch {
-      return "";
-    }
-  }
-  return "";
 }
 
 function setCookie(name, value, maxAge) {
