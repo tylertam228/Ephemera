@@ -2,7 +2,10 @@
   "name": "ephemera",
   "private": true,
   "scripts": {
-    "dev": "npm --prefix web install && npm --prefix web run build && node server/index.mjs",
-    "test": "node --test server/spa.test.mjs"
+    "dev": "npm install && npm --prefix web install && npm --prefix web run build && node server/index.mjs",
+    "test": "node --test server/*.test.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1"
   }
 }
