@@ -114,7 +114,7 @@ test("a device public key is stored for the signed-in user only", async () => {
 
     const list = await send(port, "GET", "/api/devices", { cookie });
     assert.deepEqual(JSON.parse(list.body).map((row) => row.name), ["laptop"]);
-    assert.equal(JSON.parse(list.body)[0].publicKey, undefined);
+    assert.equal(JSON.parse(list.body)[0].publicKey, locked.spki);
 
     const alone = await send(port, "GET", `/api/devices?except=${saved.id}`, { cookie });
     assert.deepEqual(JSON.parse(alone.body), []);
