@@ -62,7 +62,7 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
   const cipher = Buffer.concat(frames);
   assert.equal(cipher.includes("hello secret"), false);
   assert.equal(cipher.includes("note.txt"), false);
-  const meta = { keepMs: 60_000, pinSalt: prepared.pinSalt, keys: prepared.keys };
+  const meta = { keepMs: 60_000, pinSalt: prepared.pinSalt, keys: prepared.keys, senderDeviceId: deviceId };
   const body = Buffer.concat([Buffer.from(encodePrefix(meta)), cipher]);
 
   const dir = await mkdtemp(join(tmpdir(), "eph-drop-"));
@@ -132,19 +132,29 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
     assert.equal(opened.files[0].name, "note.txt");
 
     const foreign = Buffer.concat([
-      Buffer.from(encodePrefix({ keepMs: 60_000, pinSalt: null, keys: [{ deviceId: "b".repeat(32), sealedKey: prepared.keys[0].sealedKey }] })),
+      Buffer.from(encodePrefix({ keepMs: 60_000, pinSalt: null, keys: [{ deviceId: "b".repeat(32), sealedKey: prepared.keys[0].sealedKey }], senderDeviceId: deviceId })),
       cipher,
     ]);
     assert.equal((await send(port, "POST", "/api/drops", { cookie, body: foreign })).status, 400);
 
+    const strangerSender = Buffer.concat([
+      Buffer.from(encodePrefix({ ...meta, senderDeviceId: "b".repeat(32) })),
+      cipher,
+    ]);
+    assert.equal((await send(port, "POST", "/api/drops", { cookie, body: strangerSender })).status, 400);
+
+    const { senderDeviceId: _omitted, ...withoutSender } = meta;
+    const anonymous = Buffer.concat([Buffer.from(encodePrefix(withoutSender)), cipher]);
+    assert.equal((await send(port, "POST", "/api/drops", { cookie, body: anonymous })).status, 400);
+
     const past = Buffer.concat([
-      Buffer.from(encodePrefix({ expiresAt: 1, pinSalt: null, keys: prepared.keys })),
+      Buffer.from(encodePrefix({ expiresAt: 1, pinSalt: null, keys: prepared.keys, senderDeviceId: deviceId })),
       cipher,
     ]);
     assert.equal((await send(port, "POST", "/api/drops", { cookie, body: past })).status, 400);
 
     const both = Buffer.concat([
-      Buffer.from(encodePrefix({ keepMs: 60_000, expiresAt: Date.now() + 60_000, pinSalt: null, keys: prepared.keys })),
+      Buffer.from(encodePrefix({ keepMs: 60_000, expiresAt: Date.now() + 60_000, pinSalt: null, keys: prepared.keys, senderDeviceId: deviceId })),
       cipher,
     ]);
     assert.equal((await send(port, "POST", "/api/drops", { cookie, body: both })).status, 400);
@@ -199,6 +209,10 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
     );
     assert.equal(listed[0].pin, false);
     assert.equal(listed[1].pin, true);
+    assert.equal(listed[0].fromDevice, "phone");
+    assert.equal(listed[0].fromUser, "ada");
+    assert.equal(listed[1].fromDevice, null);
+    assert.equal(listed[1].fromUser, "ada");
     assert.equal(listed[0].expiresAt, saved.expiresAt);
     assert.equal(inbox.body.includes(salt), false);
     assert.equal(inbox.body.includes("sealed-for-phone"), false);

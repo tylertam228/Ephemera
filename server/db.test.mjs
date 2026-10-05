@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdirSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import Database from "better-sqlite3";
 import { blobPath, hashToken, newId, openDb } from "./db.mjs";
 
 test("schema stores sealed keys and only the session hash", async () => {
@@ -58,6 +60,31 @@ test("schema stores sealed keys and only the session hash", async () => {
     openDb(dir).close();
   } finally {
     db.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("opening an older database adds the sender column once", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "eph-old-"));
+  try {
+    mkdirSync(dir, { recursive: true });
+    const old = new Database(join(dir, "ephemera.sqlite"));
+    old.exec(
+      "CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT NOT NULL, created_at INTEGER NOT NULL);" +
+        "CREATE TABLE devices (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, public_key TEXT NOT NULL, created_at INTEGER NOT NULL);" +
+        "CREATE TABLE drops (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at INTEGER NOT NULL, pin_salt TEXT, created_at INTEGER NOT NULL);" +
+        "INSERT INTO users VALUES ('1', 'ada', 1);" +
+        "INSERT INTO drops VALUES ('d', '1', 9, NULL, 1);",
+    );
+    old.close();
+    for (let round = 0; round < 2; round += 1) {
+      const db = openDb(dir);
+      const names = db.prepare("PRAGMA table_info(drops)").all().map((column) => column.name);
+      assert.equal(names.filter((name) => name === "sender_device_id").length, 1);
+      assert.equal(db.prepare("SELECT sender_device_id AS s FROM drops WHERE id = 'd'").get().s, null);
+      db.close();
+    }
+  } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });

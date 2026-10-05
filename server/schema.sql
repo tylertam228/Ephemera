@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS drops (
   user_id TEXT NOT NULL REFERENCES users(id),
   expires_at INTEGER NOT NULL,
   pin_salt TEXT,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  sender_device_id TEXT REFERENCES devices(id)
 );
 
 CREATE TABLE IF NOT EXISTS drop_keys (

@@ -46,8 +46,8 @@ export async function handleDrop(req, res, { db, config, dataDir, log = writeLog
     if (expiresAt <= finishedAt) throw bad();
     db.transaction(() => {
       db.prepare(
-        "INSERT INTO drops (id, user_id, expires_at, pin_salt, created_at) VALUES (?, ?, ?, ?, ?)",
-      ).run(id, user.id, expiresAt, meta.pinSalt, finishedAt);
+        "INSERT INTO drops (id, user_id, expires_at, pin_salt, created_at, sender_device_id) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(id, user.id, expiresAt, meta.pinSalt, finishedAt, meta.senderDeviceId);
       const insertKey = db.prepare(
         "INSERT INTO drop_keys (drop_id, device_id, sealed_key) VALUES (?, ?, ?)",
       );
@@ -145,9 +145,12 @@ function listInbox(req, res, db, user) {
   const rows = db
     .prepare(
       `SELECT drops.id, drops.expires_at AS expiresAt, drops.created_at AS createdAt,
-              drops.pin_salt IS NOT NULL AS pin
+              drops.pin_salt IS NOT NULL AS pin,
+              sender.name AS fromDevice, users.username AS fromUser
        FROM drops
        JOIN drop_keys ON drop_keys.drop_id = drops.id AND drop_keys.device_id = ?
+       JOIN users ON users.id = drops.user_id
+       LEFT JOIN devices AS sender ON sender.id = drops.sender_device_id
        WHERE drops.user_id = ? AND drops.expires_at > ?
        ORDER BY drops.created_at`,
     )
@@ -160,6 +163,8 @@ function listInbox(req, res, db, user) {
       expiresAt: row.expiresAt,
       createdAt: row.createdAt,
       pin: Boolean(row.pin),
+      fromDevice: row.fromDevice,
+      fromUser: row.fromUser,
     })),
   );
 }
@@ -188,7 +193,11 @@ function checkMeta(db, userId, meta) {
     )
     .all(userId, ...keys.map((key) => key.deviceId));
   if (rows.length !== keys.length) throw bad();
-  return { keepMs, expiresAt, pinSalt, keys };
+  const senderDeviceId = meta.senderDeviceId;
+  if (typeof senderDeviceId !== "string" || !/^[0-9a-f]{32}$/.test(senderDeviceId)) throw bad();
+  const sender = db.prepare("SELECT id FROM devices WHERE id = ? AND user_id = ?").get(senderDeviceId, userId);
+  if (!sender) throw bad();
+  return { keepMs, expiresAt, pinSalt, keys, senderDeviceId };
 }
 
 async function acceptBody(req, file, maxBytes, onOpen, onMeta) {
