@@ -2,7 +2,15 @@
 
 Version 1 is a burn-after-reading drop for text and files. Two machines that cannot reach each other directly both open this site, sign in with the same Discord account, and hand the payload across. The server stores ciphertext only. A drop is deleted when a recipient takes it or when its timer expires. There is no content backup.
 
-The application is not implemented yet. This document defines the version 1 scope, the encryption flow, and the local Discord setup.
+One command builds the browser app and serves it. Sign-in, device keys, and encryption are not implemented yet. This document defines the version 1 scope, the encryption flow, and the local Discord setup.
+
+## Local
+
+```
+npm run dev
+```
+
+That installs the browser dependencies, builds them, and serves the build at http://localhost:3000.
 
 ## Scope
 
@@ -89,6 +97,6 @@ https://your.domain/api/auth/callback/discord
 
 ## Deployment
 
-Version 1 runs on a private VPS. The planned stack is Next.js, Better Auth, SQLite for metadata, a local directory for ciphertext, and Docker Compose with Caddy for HTTPS.
+Version 1 runs on a private VPS. The browser app is Vite, React, and TypeScript. A Node.js server serves that build and, in later tasks, handles sign-in, upload, and deletion. It has no decrypt function. SQLite holds metadata, a local directory holds ciphertext, and Docker Compose with Caddy serves HTTPS.
 
 Leave provider-wide disk snapshots off for the data volume. A snapshot would retain ciphertext after a claim. That ciphertext is still unreadable without the recipient's private key, and it breaks the requirement that a taken drop leave no copy on disk.
