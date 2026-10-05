@@ -21,7 +21,7 @@ const config = {
   maxUploadMb: 1,
 };
 
-function send(port, method, path, { cookie, body } = {}) {
+function send(port, method, path, { cookie, body, raw } = {}) {
   return new Promise((resolve, reject) => {
     const req = request(
       {
@@ -37,7 +37,10 @@ function send(port, method, path, { cookie, body } = {}) {
       (res) => {
         const chunks = [];
         res.on("data", (chunk) => chunks.push(chunk));
-        res.on("end", () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString() }));
+        res.on("end", () => {
+          const buf = Buffer.concat(chunks);
+          resolve({ status: res.statusCode, body: raw ? buf : buf.toString() });
+        });
       },
     );
     req.on("error", reject);
@@ -202,10 +205,35 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
     const elsewhere = await send(port, "GET", `/api/drops?device=${laptop}`, { cookie });
     assert.deepEqual(JSON.parse(elsewhere.body), []);
 
-    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM drops").get().n, 3);
-    assert.deepEqual(await readdir(join(dir, "blobs")), [saved.id]);
+    assert.equal((await send(port, "GET", `/api/drops/${saved.id}?device=${deviceId}`)).status, 401);
+    assert.equal((await send(port, "GET", `/api/drops/${saved.id}?device=${laptop}`, { cookie })).status, 404);
+    const detail = await send(port, "GET", `/api/drops/${saved.id}?device=${deviceId}`, { cookie });
+    assert.equal(detail.status, 200);
+    assert.equal(JSON.parse(detail.body).sealedKey, prepared.keys[0].sealedKey);
+    assert.equal(JSON.parse(detail.body).pinSalt, null);
+    const pinMeta = await send(port, "GET", `/api/drops/${pinId}?device=${deviceId}`, { cookie });
+    assert.equal(JSON.parse(pinMeta.body).pinSalt, salt);
+    const blob = await send(port, "GET", `/api/drops/${saved.id}/blob?device=${deviceId}`, { cookie, raw: true });
+    assert.equal(blob.status, 200);
+    assert.deepEqual(blob.body, cipher);
+    const readBack = await openDrop({
+      privateKey: pair.privateKey,
+      pinSalt: null,
+      sealedKey: prepared.keys[0].sealedKey,
+      bytes: new Uint8Array(blob.body),
+    });
+    assert.deepEqual(readBack.texts, ["hello secret"]);
+    assert.equal((await send(port, "DELETE", `/api/drops/${saved.id}?device=${laptop}`, { cookie })).status, 404);
+    const claimed = await send(port, "DELETE", `/api/drops/${saved.id}?device=${deviceId}`, { cookie });
+    assert.equal(claimed.status, 204);
+    assert.equal((await send(port, "GET", `/api/drops/${saved.id}?device=${deviceId}`, { cookie })).status, 404);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM drop_keys WHERE drop_id = ?").get(saved.id).n, 0);
+
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM drops").get().n, 2);
+    assert.deepEqual(await readdir(join(dir, "blobs")), []);
     const text = lines.join("\n");
     assert.match(text, /msg=drop_stored/);
+    assert.match(text, /msg=drop_claimed/);
     assert.equal(text.includes(prepared.keys[0].sealedKey), false);
     assert.equal(text.includes("hello secret"), false);
     assert.equal(text.includes("note.txt"), false);

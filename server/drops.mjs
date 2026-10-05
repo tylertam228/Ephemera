@@ -1,5 +1,5 @@
-import { createWriteStream } from "node:fs";
-import { rm } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { rm, stat } from "node:fs/promises";
 import { finished } from "node:stream/promises";
 import { blobPath, newId } from "./db.mjs";
 import { log as writeLog } from "./log.mjs";
@@ -11,6 +11,12 @@ export async function handleDrop(req, res, { db, config, dataDir, log = writeLog
   const user = sessionUser(req, db);
   if (!user) {
     json(res, 401, {});
+    return;
+  }
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const item = url.pathname.match(/^\/api\/drops\/([0-9a-f]{32})(\/blob)?$/);
+  if (item) {
+    await openItem(req, res, { db, dataDir, user, id: item[1], blob: Boolean(item[2]), log });
     return;
   }
   if (req.method === "GET") {
@@ -60,9 +66,74 @@ export async function handleDrop(req, res, { db, config, dataDir, log = writeLog
   }
 }
 
-function listInbox(req, res, db, user) {
+async function openItem(req, res, { db, dataDir, user, id, blob, log }) {
+  const device = deviceParam(req);
+  if (!device) {
+    json(res, 400, {});
+    return;
+  }
+  const row = recipientDrop(db, user.id, device, id);
+  if (!row) {
+    json(res, 404, {});
+    return;
+  }
+  if (req.method === "GET" && blob) {
+    await streamBlob(res, dataDir, id);
+    return;
+  }
+  if (req.method === "GET") {
+    json(res, 200, { pinSalt: row.pinSalt, sealedKey: row.sealedKey, expiresAt: row.expiresAt });
+    return;
+  }
+  if (req.method === "DELETE" && !blob) {
+    await rm(blobPath(dataDir, id), { force: true });
+    db.prepare("DELETE FROM drops WHERE id = ? AND user_id = ?").run(id, user.id);
+    log("info", "drop_claimed", { user: user.id, drop: id });
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+  res.writeHead(405, { allow: blob ? "GET" : "GET, DELETE", "content-type": "text/plain; charset=utf-8" });
+  res.end("method");
+}
+
+async function streamBlob(res, dataDir, id) {
+  const file = blobPath(dataDir, id);
+  try {
+    await stat(file);
+  } catch {
+    json(res, 404, {});
+    return;
+  }
+  const stream = createReadStream(file);
+  stream.on("error", () => {
+    if (!res.headersSent) json(res, 404, {});
+    else res.destroy();
+  });
+  res.writeHead(200, { "content-type": "application/octet-stream" });
+  stream.pipe(res);
+}
+
+function recipientDrop(db, userId, device, id) {
+  return db
+    .prepare(
+      `SELECT drops.expires_at AS expiresAt, drops.pin_salt AS pinSalt, drop_keys.sealed_key AS sealedKey
+       FROM drops
+       JOIN drop_keys ON drop_keys.drop_id = drops.id AND drop_keys.device_id = ?
+       JOIN devices ON devices.id = drop_keys.device_id AND devices.user_id = ?
+       WHERE drops.id = ? AND drops.user_id = ? AND drops.expires_at > ?`,
+    )
+    .get(device, userId, id, userId, Date.now());
+}
+
+function deviceParam(req) {
   const device = new URL(req.url ?? "/", "http://localhost").searchParams.get("device") ?? "";
-  if (!/^[0-9a-f]{32}$/.test(device)) {
+  return /^[0-9a-f]{32}$/.test(device) ? device : "";
+}
+
+function listInbox(req, res, db, user) {
+  const device = deviceParam(req);
+  if (!device) {
     json(res, 400, {});
     return;
   }
