@@ -1,0 +1,86 @@
+import assert from "node:assert/strict";
+import { webcrypto } from "node:crypto";
+import test from "node:test";
+import { openDrop, prepareDrop } from "./drop.mjs";
+
+if (!globalThis.crypto) globalThis.crypto = webcrypto;
+
+async function person() {
+  const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+  const publicKey = Buffer.from(await crypto.subtle.exportKey("spki", pair.publicKey)).toString("base64");
+  return { privateKey: pair.privateKey, publicKey };
+}
+
+function concat(parts) {
+  return new Uint8Array(Buffer.concat(parts.map((part) => Buffer.from(part))));
+}
+
+test("a drop seals to each recipient and a wrong PIN does not open it", async () => {
+  const ada = await person();
+  const phone = await person();
+  const stranger = await person();
+  const file = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const prepared = await prepareDrop({
+    recipients: [
+      { id: "a".repeat(32), publicKey: ada.publicKey },
+      { id: "b".repeat(32), publicKey: phone.publicKey },
+    ],
+    texts: ["", "hello secret"],
+    files: [{ name: "note.txt", type: "text/plain", bytes: file }],
+    pin: "9481",
+    chunkSize: 4,
+  });
+  const frames = [];
+  for await (const frame of prepared.frames) frames.push(frame);
+  assert.equal(frames.length, 1 + Math.ceil(file.length / 4));
+  const bytes = concat(frames);
+  assert.equal(Buffer.from(bytes).includes("hello secret"), false);
+  assert.equal(Buffer.from(bytes).includes("note.txt"), false);
+  assert.equal(prepared.keys.map((key) => key.deviceId).join(), `${"a".repeat(32)},${"b".repeat(32)}`);
+  const opened = await openDrop({
+    privateKey: phone.privateKey,
+    pin: "9481",
+    pinSalt: prepared.pinSalt,
+    sealedKey: prepared.keys[1].sealedKey,
+    bytes,
+  });
+  assert.deepEqual(opened.texts, ["hello secret"]);
+  assert.equal(opened.files[0].name, "note.txt");
+  assert.equal(opened.files[0].type, "text/plain");
+  assert.deepEqual(opened.files[0].bytes, file);
+  await assert.rejects(() =>
+    openDrop({
+      privateKey: phone.privateKey,
+      pin: "nope",
+      pinSalt: prepared.pinSalt,
+      sealedKey: prepared.keys[1].sealedKey,
+      bytes,
+    }),
+  );
+  await assert.rejects(() =>
+    openDrop({
+      privateKey: stranger.privateKey,
+      pin: "9481",
+      pinSalt: prepared.pinSalt,
+      sealedKey: prepared.keys[1].sealedKey,
+      bytes,
+    }),
+  );
+
+  const plain = await prepareDrop({
+    recipients: [{ id: "a".repeat(32), publicKey: ada.publicKey }],
+    texts: ["open"],
+    files: [],
+  });
+  assert.equal(plain.pinSalt, null);
+  const plainFrames = [];
+  for await (const frame of plain.frames) plainFrames.push(frame);
+  const read = await openDrop({
+    privateKey: ada.privateKey,
+    pinSalt: null,
+    sealedKey: plain.keys[0].sealedKey,
+    bytes: concat(plainFrames),
+  });
+  assert.deepEqual(read.texts, ["open"]);
+  assert.deepEqual(read.files, []);
+});
