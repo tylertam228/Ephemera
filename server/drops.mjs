@@ -13,8 +13,12 @@ export async function handleDrop(req, res, { db, config, dataDir, log = writeLog
     json(res, 401, {});
     return;
   }
+  if (req.method === "GET") {
+    listInbox(req, res, db, user);
+    return;
+  }
   if (req.method !== "POST") {
-    res.writeHead(405, { allow: "POST", "content-type": "text/plain; charset=utf-8" });
+    res.writeHead(405, { allow: "GET, POST", "content-type": "text/plain; charset=utf-8" });
     res.end("method");
     return;
   }
@@ -54,6 +58,39 @@ export async function handleDrop(req, res, { db, config, dataDir, log = writeLog
       log("error", "request_failed", { err: err instanceof Error ? err.message : "request failed" });
     }
   }
+}
+
+function listInbox(req, res, db, user) {
+  const device = new URL(req.url ?? "/", "http://localhost").searchParams.get("device") ?? "";
+  if (!/^[0-9a-f]{32}$/.test(device)) {
+    json(res, 400, {});
+    return;
+  }
+  const owned = db.prepare("SELECT id FROM devices WHERE id = ? AND user_id = ?").get(device, user.id);
+  if (!owned) {
+    json(res, 400, {});
+    return;
+  }
+  const rows = db
+    .prepare(
+      `SELECT drops.id, drops.expires_at AS expiresAt, drops.created_at AS createdAt,
+              drops.pin_salt IS NOT NULL AS pin
+       FROM drops
+       JOIN drop_keys ON drop_keys.drop_id = drops.id AND drop_keys.device_id = ?
+       WHERE drops.user_id = ? AND drops.expires_at > ?
+       ORDER BY drops.created_at`,
+    )
+    .all(device, user.id, Date.now());
+  json(
+    res,
+    200,
+    rows.map((row) => ({
+      id: row.id,
+      expiresAt: row.expiresAt,
+      createdAt: row.createdAt,
+      pin: Boolean(row.pin),
+    })),
+  );
 }
 
 function checkMeta(db, userId, meta) {

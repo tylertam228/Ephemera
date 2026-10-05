@@ -148,15 +148,69 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
 
     const huge = Buffer.concat([Buffer.from(encodePrefix(meta)), Buffer.alloc(1024 * 1024 + 1)]);
     assert.equal((await send(port, "POST", "/api/drops", { cookie, body: huge })).status, 413);
-    assert.equal((await send(port, "GET", "/api/drops", { cookie })).status, 405);
+    assert.equal((await send(port, "PUT", "/api/drops", { cookie })).status, 405);
 
-    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM drops").get().n, 1);
+    assert.equal((await send(port, "GET", "/api/drops", { cookie })).status, 400);
+    assert.equal((await send(port, "GET", `/api/drops?device=${deviceId}`)).status, 401);
+    assert.equal((await send(port, "GET", `/api/drops?device=${"b".repeat(32)}`, { cookie })).status, 400);
+    const laptop = "c".repeat(32);
+    db.prepare("INSERT INTO devices (id, user_id, name, public_key, created_at) VALUES (?, ?, ?, ?, ?)").run(
+      laptop,
+      "42",
+      "laptop",
+      "laptop-public-key",
+      now,
+    );
+    const pinId = "d".repeat(32);
+    const salt = "cGluLXNhbHQtcGluLXNhbHQ=";
+    db.prepare("INSERT INTO drops (id, user_id, expires_at, pin_salt, created_at) VALUES (?, ?, ?, ?, ?)").run(
+      pinId,
+      "42",
+      after + 120_000,
+      salt,
+      after + 1,
+    );
+    db.prepare("INSERT INTO drop_keys (drop_id, device_id, sealed_key) VALUES (?, ?, ?)").run(
+      pinId,
+      deviceId,
+      "sealed-for-phone",
+    );
+    db.prepare("INSERT INTO drops (id, user_id, expires_at, pin_salt, created_at) VALUES (?, ?, ?, ?, ?)").run(
+      "e".repeat(32),
+      "42",
+      1,
+      null,
+      now,
+    );
+    db.prepare("INSERT INTO drop_keys (drop_id, device_id, sealed_key) VALUES (?, ?, ?)").run(
+      "e".repeat(32),
+      deviceId,
+      "sealed-expired",
+    );
+    const inbox = await send(port, "GET", `/api/drops?device=${deviceId}`, { cookie });
+    assert.equal(inbox.status, 200);
+    const listed = JSON.parse(inbox.body);
+    assert.deepEqual(
+      listed.map((row) => row.id),
+      [saved.id, pinId],
+    );
+    assert.equal(listed[0].pin, false);
+    assert.equal(listed[1].pin, true);
+    assert.equal(listed[0].expiresAt, saved.expiresAt);
+    assert.equal(inbox.body.includes(salt), false);
+    assert.equal(inbox.body.includes("sealed-for-phone"), false);
+    const elsewhere = await send(port, "GET", `/api/drops?device=${laptop}`, { cookie });
+    assert.deepEqual(JSON.parse(elsewhere.body), []);
+
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM drops").get().n, 3);
     assert.deepEqual(await readdir(join(dir, "blobs")), [saved.id]);
     const text = lines.join("\n");
     assert.match(text, /msg=drop_stored/);
     assert.equal(text.includes(prepared.keys[0].sealedKey), false);
     assert.equal(text.includes("hello secret"), false);
     assert.equal(text.includes("note.txt"), false);
+    assert.equal(text.includes(salt), false);
+    assert.equal(text.includes("sealed-for-phone"), false);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     db.close();
