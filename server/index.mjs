@@ -6,6 +6,7 @@ import { applyEnvFile, loadConfig } from "./config.mjs";
 import { openDb } from "./db.mjs";
 import { log } from "./log.mjs";
 import { serveSpa } from "./spa.mjs";
+import { sweepExpired } from "./sweep.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dataDir = join(repo, "data");
@@ -47,3 +48,12 @@ createServer((req, res) => {
 }).listen(port, "127.0.0.1", () => {
   log("info", "listening", { port });
 });
+
+const sweepMs = 30_000;
+const sweep = () => {
+  sweepExpired(db, dataDir).catch((err) => {
+    log("error", "sweep_failed", { err: err instanceof Error ? err.message : "sweep failed" });
+  });
+};
+sweep();
+setInterval(sweep, sweepMs);
