@@ -238,9 +238,19 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
     });
     assert.deepEqual(readBack.texts, ["hello secret"]);
     assert.equal((await send(port, "DELETE", `/api/drops/${saved.id}?device=${laptop}`, { cookie })).status, 404);
+    db.prepare("INSERT INTO drop_keys (drop_id, device_id, sealed_key) VALUES (?, ?, ?)").run(
+      saved.id,
+      laptop,
+      "sealed-for-laptop",
+    );
     const claimed = await send(port, "DELETE", `/api/drops/${saved.id}?device=${deviceId}`, { cookie });
     assert.equal(claimed.status, 204);
     assert.equal((await send(port, "GET", `/api/drops/${saved.id}?device=${deviceId}`, { cookie })).status, 404);
+    assert.equal((await send(port, "GET", `/api/drops/${saved.id}?device=${laptop}`, { cookie })).status, 200);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM drop_keys WHERE drop_id = ?").get(saved.id).n, 1);
+    assert.deepEqual(await readdir(join(dir, "blobs")), [saved.id]);
+    const finished = await send(port, "DELETE", `/api/drops/${saved.id}?device=${laptop}`, { cookie });
+    assert.equal(finished.status, 204);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM drop_keys WHERE drop_id = ?").get(saved.id).n, 0);
 
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM drops").get().n, 2);

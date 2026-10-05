@@ -37,11 +37,13 @@ export function Compose({
   const [at, setAt] = useState("");
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<keyof typeof notices | "">("");
+  const [skipped, setSkipped] = useState<string[]>([]);
+  const selected = recipients.filter((row) => !skipped.includes(row.id));
   const picked = at ? new Date(at).getTime() : null;
   const chosen = expiry({ preset, at: picked }, Date.now());
   const presetRow = presets.find((row) => row[0] === preset);
   const presetLabel = presetRow?.[1] ?? "";
-  const ready = (texts.some((text) => text.trim()) || files.length > 0) && (!at || chosen != null);
+  const ready = selected.length > 0 && (texts.some((text) => text.trim()) || files.length > 0) && (!at || chosen != null);
 
   async function send(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -50,7 +52,7 @@ export function Compose({
     setNotice("");
     try {
       const prepared = await prepareDrop({
-        recipients,
+        recipients: selected,
         texts: texts.filter((text) => text.trim()),
         files,
         pin,
@@ -84,9 +86,26 @@ export function Compose({
         </span>
         <ul className="targets">
           {recipients.map((row) => (
-            <li key={row.id}>{row.name}</li>
+            <li key={row.id}>
+              <button
+                type="button"
+                aria-pressed={!skipped.includes(row.id)}
+                onClick={() =>
+                  setSkipped((current) =>
+                    current.includes(row.id) ? current.filter((id) => id !== row.id) : current.concat(row.id),
+                  )
+                }
+              >
+                {row.name}
+              </button>
+            </li>
           ))}
         </ul>
+        {selected.length === 0 ? (
+          <p className="hint">
+            <Bi en="Pick at least one device." zh="請至少選擇一台裝置。" />
+          </p>
+        ) : null}
       </div>
       {texts.map((text, index) => (
         <div className="text" key={index}>

@@ -86,8 +86,14 @@ async function openItem(req, res, { db, dataDir, user, id, blob, log }) {
     return;
   }
   if (req.method === "DELETE" && !blob) {
-    await rm(blobPath(dataDir, id), { force: true });
-    db.prepare("DELETE FROM drops WHERE id = ? AND user_id = ?").run(id, user.id);
+    const last = db.transaction(() => {
+      db.prepare("DELETE FROM drop_keys WHERE drop_id = ? AND device_id = ?").run(id, device);
+      const left = db.prepare("SELECT COUNT(*) AS n FROM drop_keys WHERE drop_id = ?").get(id).n;
+      if (left > 0) return false;
+      db.prepare("DELETE FROM drops WHERE id = ? AND user_id = ?").run(id, user.id);
+      return true;
+    })();
+    if (last) await rm(blobPath(dataDir, id), { force: true });
     log("info", "drop_claimed", { user: user.id, drop: id });
     res.writeHead(204);
     res.end();
