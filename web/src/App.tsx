@@ -9,6 +9,7 @@ export function App() {
   const [device, setDevice] = useState<Device | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  const [recipients, setRecipients] = useState<Device[] | undefined>(undefined);
   const failed = new URLSearchParams(window.location.search).get("auth") === "failed";
 
   useEffect(() => {
@@ -45,6 +46,25 @@ export function App() {
     };
   }, [me]);
 
+  useEffect(() => {
+    if (!device) return;
+    let gone = false;
+    const load = () => {
+      fetch(`/api/devices?except=${encodeURIComponent(device.id)}`)
+        .then(async (res) => {
+          if (!res.ok || gone) return;
+          setRecipients((await res.json()) as Device[]);
+        })
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => {
+      gone = true;
+      window.removeEventListener("focus", load);
+    };
+  }, [device]);
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!me) return;
@@ -71,7 +91,18 @@ export function App() {
         <>
           <p>{me.username}</p>
           {device === undefined ? null : device ? (
-            <p>{device.name}</p>
+            <>
+              <p>{device.name}</p>
+              {recipients === undefined ? null : recipients.length === 0 ? (
+                <p>Sign in on another device with this account before sending.</p>
+              ) : (
+                <ul>
+                  {recipients.map((row) => (
+                    <li key={row.id}>{row.name}</li>
+                  ))}
+                </ul>
+              )}
+            </>
           ) : (
             <form onSubmit={save}>
               <input name="name" required maxLength={40} autoComplete="off" aria-label="Device name" />

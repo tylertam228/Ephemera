@@ -65,3 +65,9 @@ button {
   display: inline-block;
   margin-top: 1rem;
 }
+
+ul {
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
