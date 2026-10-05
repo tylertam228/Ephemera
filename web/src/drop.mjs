@@ -54,25 +54,16 @@ export async function uploadDrop({ pinSalt, keys, frames, keepMs, expiresAt }) {
   const meta = { pinSalt, keys };
   if (keepMs != null) meta.keepMs = keepMs;
   else meta.expiresAt = expiresAt;
-  const prefix = encodePrefix(meta);
-  let started = false;
-  const body = new ReadableStream({
-    async pull(controller) {
-      if (!started) {
-        started = true;
-        controller.enqueue(prefix);
-        return;
-      }
-      const next = await frames.next();
-      if (next.done) controller.close();
-      else controller.enqueue(next.value);
-    },
-  });
+  const parts = [encodePrefix(meta)];
+  for (;;) {
+    const next = await frames.next();
+    if (next.done) break;
+    parts.push(next.value);
+  }
   const res = await fetch("/api/drops", {
     method: "POST",
     headers: { "content-type": "application/octet-stream" },
-    body,
-    duplex: "half",
+    body: concat(parts),
   });
   if (res.status === 413) failCap();
   if (!res.ok) throw new Error("upload failed");

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import test from "node:test";
-import { openDrop, prepareDrop } from "./drop.mjs";
+import { openDrop, prepareDrop, uploadDrop } from "./drop.mjs";
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -83,4 +83,35 @@ test("a drop seals to each recipient and a wrong PIN does not open it", async ()
   });
   assert.deepEqual(read.texts, ["open"]);
   assert.deepEqual(read.files, []);
+});
+
+test("upload posts the ciphertext as one buffer", async () => {
+  const ada = await person();
+  const prepared = await prepareDrop({
+    recipients: [{ id: "a".repeat(32), publicKey: ada.publicKey }],
+    texts: ["open"],
+    files: [],
+  });
+  let body;
+  const previous = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    body = init.body;
+    return new Response(JSON.stringify({ id: "d".repeat(32), expiresAt: 1 }), {
+      status: 201,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const saved = await uploadDrop({
+      pinSalt: prepared.pinSalt,
+      keys: prepared.keys,
+      frames: prepared.frames,
+      keepMs: 60_000,
+    });
+    assert.equal(saved.id, "d".repeat(32));
+  } finally {
+    globalThis.fetch = previous;
+  }
+  assert.ok(body instanceof Uint8Array);
+  assert.equal(body.byteLength > 4, true);
 });
