@@ -105,6 +105,13 @@ h1 {
   letter-spacing: 0.02em;
 }
 
+.logo {
+  display: block;
+  width: 2rem;
+  height: 2rem;
+  object-fit: contain;
+}
+
 .tag,
 .who,
 .hint,
