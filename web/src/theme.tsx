@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 
+import { useLang } from "./i18n";
+
 const themes = [
-  { id: "paper", en: "Paper", zh: "紙張", swatch: "#F4EEE3" },
-  { id: "ash", en: "Ash", zh: "炭灰", swatch: "#1C1A18" },
-  { id: "ember", en: "Ember", zh: "夜燼", swatch: "#120D0B" },
+  { id: "paper", key: "themePaper", swatch: "#F4EEE3" },
+  { id: "ash", key: "themeAsh", swatch: "#1C1A18" },
+  { id: "ember", key: "themeEmber", swatch: "#120D0B" },
 ] as const;
 
 function saved(): string {
@@ -18,6 +20,7 @@ function saved(): string {
 document.documentElement.dataset.theme = saved();
 
 export function ThemeSwitch() {
+  const { t } = useLang();
   const [theme, setTheme] = useState(saved);
 
   useEffect(() => {
@@ -30,15 +33,15 @@ export function ThemeSwitch() {
   }, [theme]);
 
   return (
-    <div className="themes" role="radiogroup" aria-label="Theme 主題">
+    <div className="themes" role="radiogroup" aria-label={t("theme")}>
       {themes.map((item) => (
         <button
           key={item.id}
           type="button"
           role="radio"
           aria-checked={theme === item.id}
-          aria-label={`${item.en} ${item.zh}`}
-          title={`${item.en} ${item.zh}`}
+          aria-label={t(item.key)}
+          title={t(item.key)}
           className="swatch"
           style={{ background: item.swatch }}
           onClick={() => setTheme(item.id)}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { loadPrivateKey } from "./device";
 import { openDrop } from "./drop.mjs";
-import { Bi } from "./ui";
+import { formatTime, useLang, type Copy } from "./i18n";
 
 export type Drop = {
   id: string;
@@ -16,12 +16,12 @@ type OpenedFile = { name: string; type: string; bytes: Uint8Array };
 type Opened = { key: string; texts: string[]; files: OpenedFile[]; fromDevice: string | null; fromUser: string };
 
 const messages = {
-  pin: ["Enter the PIN.", "請輸入 PIN。"],
-  wrong: ["Wrong PIN.", "PIN 錯誤。"],
-  failed: ["Could not open.", "無法開啟。"],
-  copied: ["Copied.", "已複製。"],
-  nocopy: ["Could not copy.", "無法複製。"],
-} as const;
+  pin: "enterPin",
+  wrong: "wrongPin",
+  failed: "openFailed",
+  copied: "copied",
+  nocopy: "copyFailed",
+} as const satisfies Record<string, keyof Copy>;
 
 type Message = keyof typeof messages;
 
@@ -30,13 +30,12 @@ function burnDelay() {
 }
 
 function Sender({ device, user }: { device: string | null; user: string }) {
+  const { t } = useLang();
   return (
     <div>
-      <dt>
-        <Bi en="From" zh="來自" />
-      </dt>
+      <dt>{t("from")}</dt>
       <dd>
-        {device ?? <Bi en="Unknown device" zh="未知裝置" />}
+        {device ?? t("unknownDevice")}
         <span className="user"> · {user}</span>
       </dd>
     </div>
@@ -44,9 +43,10 @@ function Sender({ device, user }: { device: string | null; user: string }) {
 }
 
 function Notice({ name }: { name: Message }) {
+  const { t } = useLang();
   return (
     <p className="notice" role="status">
-      <Bi en={messages[name][0]} zh={messages[name][1]} />
+      {t(messages[name])}
     </p>
   );
 }
@@ -64,6 +64,7 @@ function Note({
   busy: boolean;
   onOpen: (pin: string) => void;
 }) {
+  const { lang, t } = useLang();
   const [pin, setPin] = useState("");
   const total = drop.expiresAt - drop.createdAt;
   const left = total > 0 ? ((drop.expiresAt - now) / total) * 100 : 0;
@@ -82,17 +83,13 @@ function Note({
           <dl className="facts">
             <Sender device={drop.fromDevice} user={drop.fromUser} />
             <div>
-              <dt>
-                <Bi en="Until" zh="到期" />
-              </dt>
-              <dd>{new Date(drop.expiresAt).toLocaleString()}</dd>
+              <dt>{t("until")}</dt>
+              <dd>{formatTime(drop.expiresAt, lang)}</dd>
             </div>
           </dl>
           {drop.pin ? (
             <div className="pin">
-              <span className="hint">
-                <Bi en="PIN required" zh="需要 PIN" />
-              </span>
+              <span className="hint">{t("pinRequired")}</span>
               <input
                 type="password"
                 value={pin}
@@ -104,13 +101,13 @@ function Note({
           ) : null}
           <div className="actions">
             <button type="submit" className="primary" disabled={busy || burning}>
-              <Bi en="Open" zh="開啟" />
+              {t("open")}
             </button>
           </div>
           <div
             className={percent < 20 ? "burnbar low" : "burnbar"}
             role="progressbar"
-            aria-label="Time left 剩餘時間"
+            aria-label={t("timeLeft")}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={percent}
@@ -135,6 +132,7 @@ export function Inbox({
   userId: string;
   onRemove: (id: string) => void;
 }) {
+  const { t } = useLang();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message | "">("");
   const [opened, setOpened] = useState<Opened[]>([]);
@@ -205,13 +203,9 @@ export function Inbox({
 
   return (
     <section className="inbox">
-      <h2>
-        <Bi en="Inbox" zh="收件匣" />
-      </h2>
+      <h2>{t("inbox")}</h2>
       {!drops ? null : drops.length === 0 ? (
-        <p className="empty">
-          <Bi en="Nothing waiting." zh="目前沒有內容。" />
-        </p>
+        <p className="empty">{t("empty")}</p>
       ) : (
         <ul className="notes">
           {drops.map((drop) => (
@@ -239,6 +233,7 @@ export function Inbox({
 }
 
 function Review({ item, onClose }: { item: Opened; onClose: () => void }) {
+  const { t } = useLang();
   const [copied, setCopied] = useState<Message | "">("");
   const [closing, setClosing] = useState(false);
 
@@ -281,7 +276,7 @@ function Review({ item, onClose }: { item: Opened; onClose: () => void }) {
             <div className="block" key={index}>
               <p>{text}</p>
               <button type="button" className="pill" onClick={() => void copy(text)}>
-                <Bi en="Copy" zh="複製" />
+                {t("copy")}
               </button>
             </div>
           ))}
@@ -292,14 +287,14 @@ function Review({ item, onClose }: { item: Opened; onClose: () => void }) {
                 {file.type ? <span className="user"> {file.type}</span> : null}
               </p>
               <button type="button" className="pill" onClick={() => download(file)}>
-                <Bi en="Download" zh="下載" />
+                {t("download")}
               </button>
             </div>
           ))}
           {copied ? <Notice name={copied} /> : null}
           <div className="actions">
             <button type="button" className="quiet" disabled={closing} onClick={close}>
-              <Bi en="Close" zh="關閉" />
+              {t("close")}
             </button>
           </div>
         </div>

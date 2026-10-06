@@ -142,22 +142,31 @@ h1 {
   color: var(--muted);
 }
 
-.bi {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  line-height: 1.2;
-}
-
-.bi small {
-  font-size: 0.75em;
-  opacity: 0.85;
-}
-
-.primary .bi,
-.pill .bi,
-.keep .bi {
+.picks {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.langs {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.langs button {
+  min-height: 2rem;
+  padding: 0.15rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.langs button[aria-checked="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
 }
 
 button {

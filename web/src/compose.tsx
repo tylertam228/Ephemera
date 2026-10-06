@@ -1,24 +1,14 @@
 import { FormEvent, useState } from "react";
 import { prepareDrop, uploadDrop } from "./drop.mjs";
+import { formatTime, useLang, type Copy } from "./i18n";
 import { expiry, presets } from "./retention.mjs";
-import { Bi } from "./ui";
 
 type Recipient = { id: string; name: string; publicKey: string };
 
-const presetZh: Record<string, string> = {
-  "1m": "1 分鐘",
-  "5m": "5 分鐘",
-  "15m": "15 分鐘",
-  "1h": "1 小時",
-  "1d": "1 天",
-  "7d": "7 天",
-  "30d": "30 天",
-};
-
 const notices = {
-  sent: ["Sent.", "已傳送。"],
-  cap: ["That drop is too large.", "內容太大。"],
-  failed: ["Could not send.", "無法傳送。"],
+  sent: "sent",
+  cap: "tooLarge",
+  failed: "sendFailed",
 } as const;
 
 export function Compose({
@@ -30,6 +20,7 @@ export function Compose({
   maxBytes: number;
   deviceId: string;
 }) {
+  const { lang, t } = useLang();
   const [texts, setTexts] = useState([""]);
   const [files, setFiles] = useState<File[]>([]);
   const [pin, setPin] = useState("");
@@ -42,7 +33,7 @@ export function Compose({
   const picked = at ? new Date(at).getTime() : null;
   const chosen = expiry({ preset, at: picked }, Date.now());
   const presetRow = presets.find((row) => row[0] === preset);
-  const presetLabel = presetRow?.[1] ?? "";
+  const presetKey = `keep_${preset}` as keyof Copy;
   const ready = selected.length > 0 && (texts.some((text) => text.trim()) || files.length > 0) && (!at || chosen != null);
 
   async function send(event: FormEvent<HTMLFormElement>) {
@@ -81,9 +72,7 @@ export function Compose({
   return (
     <form className="card compose" onSubmit={send}>
       <div>
-        <span className="label">
-          <Bi en="To" zh="收件裝置" />
-        </span>
+        <span className="label">{t("to")}</span>
         <ul className="targets">
           {recipients.map((row) => (
             <li key={row.id}>
@@ -101,16 +90,12 @@ export function Compose({
             </li>
           ))}
         </ul>
-        {selected.length === 0 ? (
-          <p className="hint">
-            <Bi en="Pick at least one device." zh="請至少選擇一台裝置。" />
-          </p>
-        ) : null}
+        {selected.length === 0 ? <p className="hint">{t("pickDevice")}</p> : null}
       </div>
       {texts.map((text, index) => (
         <div className="text" key={index}>
           <textarea
-            aria-label={`Text ${index + 1}`}
+            aria-label={t("text", String(index + 1))}
             value={text}
             onChange={(event) => {
               const next = texts.slice();
@@ -124,21 +109,21 @@ export function Compose({
               className="quiet"
               onClick={() => setTexts(texts.filter((_, item) => item !== index))}
             >
-              <Bi en="Remove text" zh="移除文字" />
+              {t("removeText")}
             </button>
           ) : null}
         </div>
       ))}
       <div className="adders">
         <button type="button" className="quiet" onClick={() => setTexts(texts.concat(""))}>
-          <Bi en="Add text" zh="新增文字" />
+          {t("addText")}
         </button>
         <label className="quiet file">
-          <Bi en="Add files" zh="新增檔案" />
+          {t("addFiles")}
           <input
             type="file"
             multiple
-            aria-label="Files"
+            aria-label={t("files")}
             onChange={(event) => {
               const picked = Array.from(event.target.files ?? []);
               event.target.value = "";
@@ -160,28 +145,19 @@ export function Compose({
                 className="quiet"
                 onClick={() => setFiles(files.filter((_, item) => item !== index))}
               >
-                <Bi en="Remove file" zh="移除檔案" />
+                {t("removeFile")}
               </button>
             </li>
           ))}
         </ul>
       ) : null}
       <label className="field">
-        <span className="label">
-          <Bi en="PIN (optional)" zh="PIN（選填）" />
-        </span>
-        <input
-          type="password"
-          value={pin}
-          autoComplete="off"
-          onChange={(event) => setPin(event.target.value)}
-        />
-        <span className="hint">
-          <Bi en="It stays in this browser." zh="只留在此瀏覽器。" />
-        </span>
+        <span className="label">{t("pinOptional")}</span>
+        <input type="password" value={pin} autoComplete="off" onChange={(event) => setPin(event.target.value)} />
+        <span className="hint">{t("pinStays")}</span>
       </label>
-      <div className="keep" role="radiogroup" aria-label="Keep for 保留時間">
-        {presets.map(([id, label]) => (
+      <div className="keep" role="radiogroup" aria-label={t("keepFor")}>
+        {presets.map(([id]) => (
           <button
             key={id}
             type="button"
@@ -192,14 +168,12 @@ export function Compose({
               setAt("");
             }}
           >
-            <Bi en={label} zh={presetZh[id] ?? label} />
+            {t(`keep_${id}` as keyof Copy)}
           </button>
         ))}
       </div>
       <label className="field">
-        <span className="label">
-          <Bi en="Or a time" zh="或指定時間" />
-        </span>
+        <span className="label">{t("orTime")}</span>
         <input
           type="datetime-local"
           value={at}
@@ -208,28 +182,18 @@ export function Compose({
         />
       </label>
       <p className="hint">
-        {at ? (
-          chosen == null ? (
-            <Bi en="Pick a later time." zh="請選擇較晚的時間。" />
-          ) : (
-            <Bi
-              en={`Kept until ${new Date(chosen).toLocaleString()}.`}
-              zh={`保留至 ${new Date(chosen).toLocaleString()}。`}
-            />
-          )
-        ) : (
-          <Bi
-            en={`The timer starts when the upload finishes, then ${presetLabel}.`}
-            zh={`上傳完成後開始計時，保留 ${presetZh[preset] ?? presetLabel}。`}
-          />
-        )}
+        {at
+          ? chosen == null
+            ? t("laterTime")
+            : t("keptUntil", formatTime(chosen, lang))
+          : t("timerStarts", t(presetKey))}
       </p>
       <button type="submit" className="primary send" disabled={sending || !ready}>
-        {sending ? <Bi en="Sending…" zh="傳送中…" /> : <Bi en="Send" zh="傳送" />}
+        {sending ? t("sending") : t("send")}
       </button>
       {notice ? (
         <p className="notice" role="status">
-          <Bi en={notices[notice][0]} zh={notices[notice][1]} />
+          {t(notices[notice])}
         </p>
       ) : null}
     </form>

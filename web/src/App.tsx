@@ -1,15 +1,17 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Compose } from "./compose";
 import { createDevice, loadDevice } from "./device";
+import { LangSwitch, useLang } from "./i18n";
 import { Drop, Inbox } from "./inbox";
 import { ThemeSwitch } from "./theme";
-import { Bi, Logo } from "./ui";
+import { Logo } from "./ui";
 
 type Me = { id: string; username: string; maxUploadMb: number };
 type Device = { id: string; name: string };
 type Recipient = Device & { publicKey: string };
 
 export function App() {
+  const { t } = useLang();
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [device, setDevice] = useState<Device | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -76,9 +78,7 @@ export function App() {
           setInbox(next);
           setFresh(arrived);
           if (arrived && typeof Notification !== "undefined" && Notification.permission === "granted") {
-            const note = new Notification("Ephemera", {
-              body: "A new drop is waiting. 有新的便條，打開即可查看。",
-            });
+            const note = new Notification(t("notifyTitle"), { body: t("notifyBody") });
             note.onclick = () => {
               window.focus();
               note.close();
@@ -101,7 +101,7 @@ export function App() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [device]);
+  }, [device, t]);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -127,14 +127,15 @@ export function App() {
           <Logo />
           <span>Ephemera</span>
         </h1>
-        <ThemeSwitch />
+        <div className="picks">
+          <LangSwitch />
+          <ThemeSwitch />
+        </div>
       </header>
-      <p className="tag">
-        <Bi en="Burn-after-reading handoff." zh="閱後即焚的傳遞。" />
-      </p>
+      <p className="tag">{t("tag")}</p>
       {failed ? (
         <p className="notice" role="alert">
-          <Bi en="Sign-in failed." zh="登入失敗。" />
+          {t("signInFailed")}
         </p>
       ) : null}
       {me === undefined ? null : me ? (
@@ -148,7 +149,7 @@ export function App() {
               <Alerts />
               <form action="/api/auth/logout" method="post">
                 <button type="submit" className="quiet">
-                  <Bi en="Sign out" zh="登出" />
+                  {t("signOut")}
                 </button>
               </form>
             </span>
@@ -157,7 +158,7 @@ export function App() {
             <>
               {fresh ? (
                 <p className="notice" role="status">
-                  <Bi en="A new drop is in the inbox." zh="收件匣有新的便條。" />
+                  {t("fresh")}
                 </p>
               ) : null}
               <Inbox
@@ -167,12 +168,7 @@ export function App() {
                 onRemove={(id) => setInbox((current) => current?.filter((row) => row.id !== id))}
               />
               {recipients === undefined ? null : recipients.length === 0 ? (
-                <p className="notice">
-                  <Bi
-                    en="Sign in on another device with this account before sending."
-                    zh="請先用同一個帳號在另一台裝置登入，才能傳送。"
-                  />
-                </p>
+                <p className="notice">{t("needOtherDevice")}</p>
               ) : (
                 <Compose
                   recipients={recipients}
@@ -183,13 +179,13 @@ export function App() {
             </>
           ) : (
             <form className="card" onSubmit={save}>
-              <input name="name" required maxLength={40} autoComplete="off" aria-label="Device name" />
+              <input name="name" required maxLength={40} autoComplete="off" aria-label={t("deviceName")} />
               <button type="submit" className="primary" disabled={busy}>
-                <Bi en="Save this device" zh="儲存此裝置" />
+                {t("saveDevice")}
               </button>
               {error ? (
                 <p className="notice" role="alert">
-                  <Bi en="Could not save this device." zh="無法儲存此裝置。" />
+                  {t("saveFailed")}
                 </p>
               ) : null}
             </form>
@@ -198,7 +194,7 @@ export function App() {
       ) : (
         <p>
           <a className="primary" href="/api/auth/discord">
-            <Bi en="Sign in with Discord" zh="使用 Discord 登入" />
+            {t("signIn")}
           </a>
         </p>
       )}
@@ -207,6 +203,7 @@ export function App() {
 }
 
 function Alerts() {
+  const { t } = useLang();
   const supported = typeof Notification !== "undefined";
   const [permission, setPermission] = useState(supported ? Notification.permission : "denied");
   if (!supported || permission !== "default") return null;
@@ -218,7 +215,7 @@ function Alerts() {
         void Notification.requestPermission().then(setPermission);
       }}
     >
-      <Bi en="Notify this device" zh="通知此裝置" />
+      {t("notify")}
     </button>
   );
 }
