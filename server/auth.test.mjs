@@ -65,11 +65,13 @@ test("discord sign-in stores a session hash and logout removes it", async () => 
   const fetchImpl = async (url, opts) => {
     calls.push({ url: String(url), body: opts?.body });
     if (String(url).endsWith("/oauth2/token")) {
+      assert.equal(String(url), "https://discord.com/api/v10/oauth2/token");
       assert.equal(opts.body.get("client_secret"), "client-secret");
       assert.equal(String(url).includes("client-secret"), false);
       return { ok: true, json: async () => ({ access_token: "access-token" }) };
     }
     assert.equal(opts.headers.authorization, "Bearer access-token");
+    assert.equal(String(url), "https://discord.com/api/v10/users/@me");
     return { ok: true, json: async () => ({ id: "42", username: "ada", global_name: "Ada" }) };
   };
   const server = await listen(db, fetchImpl, lines);

@@ -127,7 +127,7 @@ async function discordUser(config, code, verifier, fetchImpl) {
     redirect_uri: redirectUri(config),
     code_verifier: verifier,
   });
-  const tokenRes = await fetchImpl("https://discord.com/api/oauth2/token", {
+  const tokenRes = await fetchImpl("https://discord.com/api/v10/oauth2/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body,
@@ -137,7 +137,7 @@ async function discordUser(config, code, verifier, fetchImpl) {
   if (typeof token.access_token !== "string" || !token.access_token) {
     throw new Error("discord token failed");
   }
-  const meRes = await fetchImpl("https://discord.com/api/users/@me", {
+  const meRes = await fetchImpl("https://discord.com/api/v10/users/@me", {
     headers: { authorization: `Bearer ${token.access_token}` },
   });
   if (!meRes.ok) throw new Error("discord profile failed");
@@ -145,13 +145,15 @@ async function discordUser(config, code, verifier, fetchImpl) {
   if (!/^\d+$/.test(me.id ?? "") || typeof me.username !== "string" || !me.username) {
     throw new Error("discord profile failed");
   }
-  return { id: me.id, username: shownName(me.global_name) || me.username };
+  const shown = shownName(me.global_name) || shownName(me.username);
+  if (!shown) throw new Error("discord profile failed");
+  return { id: me.id, username: shown };
 }
 
 function shownName(value) {
   if (typeof value !== "string") return "";
   const name = value.trim();
-  if (!name || name.length > 32 || /[\u0000-\u001f]/.test(name)) return "";
+  if (!name || [...name].length > 32 || /[\u0000-\u001f]/.test(name)) return "";
   return name;
 }
 
