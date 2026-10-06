@@ -77,13 +77,6 @@ export function App() {
           primed = true;
           setInbox(next);
           setFresh(arrived);
-          if (arrived && typeof Notification !== "undefined" && Notification.permission === "granted") {
-            const note = new Notification(t("notifyTitle"), { body: t("notifyBody") });
-            note.onclick = () => {
-              window.focus();
-              note.close();
-            };
-          }
         })
         .catch(() => {});
     };
@@ -101,7 +94,7 @@ export function App() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [device, t]);
+  }, [device]);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -145,14 +138,11 @@ export function App() {
               {me.username}
               {device ? <span className="user"> · {device.name}</span> : null}
             </span>
-            <span className="who-actions">
-              <Alerts />
-              <form action="/api/auth/logout" method="post">
-                <button type="submit" className="quiet">
-                  {t("signOut")}
-                </button>
-              </form>
-            </span>
+            <form action="/api/auth/logout" method="post">
+              <button type="submit" className="quiet">
+                {t("signOut")}
+              </button>
+            </form>
           </div>
           {device === undefined ? null : device ? (
             <>
@@ -199,23 +189,5 @@ export function App() {
         </p>
       )}
     </main>
-  );
-}
-
-function Alerts() {
-  const { t } = useLang();
-  const supported = typeof Notification !== "undefined";
-  const [permission, setPermission] = useState(supported ? Notification.permission : "denied");
-  if (!supported || permission !== "default") return null;
-  return (
-    <button
-      type="button"
-      className="quiet"
-      onClick={() => {
-        void Notification.requestPermission().then(setPermission);
-      }}
-    >
-      {t("notify")}
-    </button>
   );
 }

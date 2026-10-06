@@ -6,7 +6,6 @@
   "saveDevice": "儲存此裝置",
   "deviceName": "裝置名稱",
   "saveFailed": "無法儲存此裝置。",
-  "notify": "通知此裝置",
   "fresh": "收件匣有新的便條。",
   "needOtherDevice": "請先用同一個帳號在另一台裝置登入，才能傳送。",
   "theme": "主題",
@@ -58,7 +57,5 @@
   "sending": "傳送中…",
   "sent": "已傳送。",
   "tooLarge": "內容太大。",
-  "sendFailed": "無法傳送。",
-  "notifyTitle": "Ephemera",
-  "notifyBody": "有新的便條，打開即可查看。"
+  "sendFailed": "無法傳送。"
 }

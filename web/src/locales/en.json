@@ -6,7 +6,6 @@
   "saveDevice": "Save this device",
   "deviceName": "Device name",
   "saveFailed": "Could not save this device.",
-  "notify": "Notify this device",
   "fresh": "A new drop is in the inbox.",
   "needOtherDevice": "Sign in on another device with this account before sending.",
   "theme": "Theme",
@@ -58,7 +57,5 @@
   "sending": "Sending…",
   "sent": "Sent.",
   "tooLarge": "That drop is too large.",
-  "sendFailed": "Could not send.",
-  "notifyTitle": "Ephemera",
-  "notifyBody": "A new drop is waiting."
+  "sendFailed": "Could not send."
 }
