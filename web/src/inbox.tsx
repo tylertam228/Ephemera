@@ -1,27 +1,25 @@
 import { useEffect, useState } from "react";
 import { loadPrivateKey } from "./device";
 import { openDrop } from "./drop.mjs";
-import { formatTime, useLang, type Copy } from "./i18n";
+import { formatTime, useLang } from "./i18n";
+import { scanFile } from "./scan.mjs";
 
 export type Drop = {
   id: string;
   expiresAt: number;
   createdAt: number;
-  pin: boolean;
   fromDevice: string | null;
   fromUser: string;
 };
 
-type OpenedFile = { name: string; type: string; bytes: Uint8Array };
+type OpenedFile = { name: string; type: string; bytes: Uint8Array; warn: boolean };
 type Opened = { key: string; texts: string[]; files: OpenedFile[]; fromDevice: string | null; fromUser: string };
 
 const messages = {
-  pin: "enterPin",
-  wrong: "wrongPin",
   failed: "openFailed",
   copied: "copied",
   nocopy: "copyFailed",
-} as const satisfies Record<string, keyof Copy>;
+} as const;
 
 type Message = keyof typeof messages;
 
@@ -51,6 +49,14 @@ function Notice({ name }: { name: Message }) {
   );
 }
 
+function previewKind(file: OpenedFile) {
+  const type = file.type || "";
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type === "application/pdf" || /\.pdf$/i.test(file.name)) return "pdf";
+  return "";
+}
+
 function Note({
   drop,
   now,
@@ -62,10 +68,9 @@ function Note({
   now: number;
   burning: boolean;
   busy: boolean;
-  onOpen: (pin: string) => void;
+  onOpen: () => void;
 }) {
   const { lang, t } = useLang();
-  const [pin, setPin] = useState("");
   const total = drop.expiresAt - drop.createdAt;
   const left = total > 0 ? ((drop.expiresAt - now) / total) * 100 : 0;
   const percent = Math.max(0, Math.min(100, Math.round(left)));
@@ -73,13 +78,7 @@ function Note({
   return (
     <li className={burning ? "slot burn" : "slot"}>
       <div className="clip">
-        <form
-          className="note"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onOpen(pin);
-          }}
-        >
+        <div className="note">
           <dl className="facts">
             <Sender device={drop.fromDevice} user={drop.fromUser} />
             <div>
@@ -87,20 +86,8 @@ function Note({
               <dd>{formatTime(drop.expiresAt, lang)}</dd>
             </div>
           </dl>
-          {drop.pin ? (
-            <div className="pin">
-              <span className="hint">{t("pinRequired")}</span>
-              <input
-                type="password"
-                value={pin}
-                autoComplete="off"
-                aria-label="PIN"
-                onChange={(event) => setPin(event.target.value)}
-              />
-            </div>
-          ) : null}
           <div className="actions">
-            <button type="submit" className="primary" disabled={busy || burning}>
+            <button type="button" className="primary" disabled={busy || burning} onClick={onOpen}>
               {t("open")}
             </button>
           </div>
@@ -114,7 +101,7 @@ function Note({
           >
             <span style={{ width: `${percent}%` }} />
           </div>
-        </form>
+        </div>
         <span className="front" aria-hidden="true" />
       </div>
     </li>
@@ -154,26 +141,20 @@ export function Inbox({
 
   if (!drops && opened.length === 0) return null;
 
-  async function open(drop: Drop, pin: string) {
+  async function open(drop: Drop) {
     if (busy) return;
-    if (drop.pin && !pin) {
-      setMessage("pin");
-      return;
-    }
     setBusy(true);
     setMessage("");
     try {
       const metaRes = await fetch(`/api/drops/${drop.id}?device=${encodeURIComponent(deviceId)}`);
       if (!metaRes.ok) throw new Error("gone");
-      const meta = (await metaRes.json()) as { pinSalt: string | null; sealedKey: string };
+      const meta = (await metaRes.json()) as { sealedKey: string };
       const blobRes = await fetch(`/api/drops/${drop.id}/blob?device=${encodeURIComponent(deviceId)}`);
       if (!blobRes.ok) throw new Error("gone");
       const privateKey = await loadPrivateKey(userId);
       if (!privateKey) throw new Error("key");
       const result = await openDrop({
         privateKey,
-        pin,
-        pinSalt: meta.pinSalt,
         sealedKey: meta.sealedKey,
         bytes: new Uint8Array(await blobRes.arrayBuffer()),
       });
@@ -188,14 +169,16 @@ export function Inbox({
         current.concat({
           key: drop.id,
           texts: result.texts,
-          files: result.files,
+          files: result.files.map((file) => ({
+            ...file,
+            warn: !scanFile({ name: file.name, bytes: file.bytes }).ok,
+          })),
           fromDevice: drop.fromDevice,
           fromUser: drop.fromUser,
         }),
       );
-    } catch (err) {
-      const missed = err instanceof Error && (err.message === "gone" || err.message === "claim" || err.message === "key");
-      setMessage(drop.pin && !missed ? "wrong" : "failed");
+    } catch {
+      setMessage("failed");
     } finally {
       setBusy(false);
     }
@@ -215,7 +198,7 @@ export function Inbox({
               now={now}
               burning={burning.includes(drop.id)}
               busy={busy}
-              onOpen={(pin) => void open(drop, pin)}
+              onOpen={() => void open(drop)}
             />
           ))}
         </ul>
@@ -236,6 +219,21 @@ function Review({ item, onClose }: { item: Opened; onClose: () => void }) {
   const { t } = useLang();
   const [copied, setCopied] = useState<Message | "">("");
   const [closing, setClosing] = useState(false);
+  const [urls, setUrls] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    const next: Record<number, string> = {};
+    item.files.forEach((file, index) => {
+      if (!previewKind(file)) return;
+      next[index] = URL.createObjectURL(
+        new Blob([file.bytes.slice()], { type: file.type || "application/octet-stream" }),
+      );
+    });
+    setUrls(next);
+    return () => {
+      Object.values(next).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [item]);
 
   async function copy(text: string) {
     try {
@@ -280,17 +278,31 @@ function Review({ item, onClose }: { item: Opened; onClose: () => void }) {
               </button>
             </div>
           ))}
-          {item.files.map((file, index) => (
-            <div className="block" key={index}>
-              <p>
-                {file.name}
-                {file.type ? <span className="user"> {file.type}</span> : null}
-              </p>
-              <button type="button" className="pill" onClick={() => download(file)}>
-                {t("download")}
-              </button>
-            </div>
-          ))}
+          {item.files.map((file, index) => {
+            const kind = previewKind(file);
+            const url = urls[index];
+            return (
+              <div className="block" key={index}>
+                <div className="file-view">
+                  <p>
+                    {file.name}
+                    {file.type ? <span className="user"> {file.type}</span> : null}
+                  </p>
+                  {file.warn ? <p className="notice">{t("scanWarn")}</p> : null}
+                  {kind === "image" && url ? <img className="preview" src={url} alt={file.name} /> : null}
+                  {kind === "video" && url ? (
+                    <video className="preview" src={url} controls playsInline />
+                  ) : null}
+                  {kind === "pdf" && url ? (
+                    <iframe className="preview pdf" title={file.name} src={url} />
+                  ) : null}
+                </div>
+                <button type="button" className="pill" onClick={() => download(file)}>
+                  {t("download")}
+                </button>
+              </div>
+            );
+          })}
           {copied ? <Notice name={copied} /> : null}
           <div className="actions">
             <button type="button" className="quiet" disabled={closing} onClick={close}>

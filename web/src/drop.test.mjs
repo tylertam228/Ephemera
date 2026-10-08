@@ -15,7 +15,7 @@ function concat(parts) {
   return new Uint8Array(Buffer.concat(parts.map((part) => Buffer.from(part))));
 }
 
-test("a drop seals to each recipient and a wrong PIN does not open it", async () => {
+test("a drop seals to each recipient and a stranger cannot open it", async () => {
   const ada = await person();
   const phone = await person();
   const stranger = await person();
@@ -27,7 +27,6 @@ test("a drop seals to each recipient and a wrong PIN does not open it", async ()
     ],
     texts: ["", "hello secret"],
     files: [{ name: "note.txt", type: "text/plain", bytes: file }],
-    pin: "9481",
     chunkSize: 4,
   });
   const frames = [];
@@ -39,8 +38,6 @@ test("a drop seals to each recipient and a wrong PIN does not open it", async ()
   assert.equal(prepared.keys.map((key) => key.deviceId).join(), `${"a".repeat(32)},${"b".repeat(32)}`);
   const opened = await openDrop({
     privateKey: phone.privateKey,
-    pin: "9481",
-    pinSalt: prepared.pinSalt,
     sealedKey: prepared.keys[1].sealedKey,
     bytes,
   });
@@ -50,18 +47,7 @@ test("a drop seals to each recipient and a wrong PIN does not open it", async ()
   assert.deepEqual(opened.files[0].bytes, file);
   await assert.rejects(() =>
     openDrop({
-      privateKey: phone.privateKey,
-      pin: "nope",
-      pinSalt: prepared.pinSalt,
-      sealedKey: prepared.keys[1].sealedKey,
-      bytes,
-    }),
-  );
-  await assert.rejects(() =>
-    openDrop({
       privateKey: stranger.privateKey,
-      pin: "9481",
-      pinSalt: prepared.pinSalt,
       sealedKey: prepared.keys[1].sealedKey,
       bytes,
     }),
@@ -72,12 +58,10 @@ test("a drop seals to each recipient and a wrong PIN does not open it", async ()
     texts: ["open"],
     files: [],
   });
-  assert.equal(plain.pinSalt, null);
   const plainFrames = [];
   for await (const frame of plain.frames) plainFrames.push(frame);
   const read = await openDrop({
     privateKey: ada.privateKey,
-    pinSalt: null,
     sealedKey: plain.keys[0].sealedKey,
     bytes: concat(plainFrames),
   });
@@ -101,7 +85,6 @@ test("a browser File is encrypted from its contents", async () => {
   assert.equal(frames.length, 1 + Math.ceil(payload.length / 2));
   const opened = await openDrop({
     privateKey: ada.privateKey,
-    pinSalt: null,
     sealedKey: prepared.keys[0].sealedKey,
     bytes: concat(frames),
   });
@@ -117,6 +100,7 @@ test("upload posts the ciphertext as one buffer", async () => {
     files: [],
   });
   let body;
+  let progressed = false;
   const previous = globalThis.fetch;
   globalThis.fetch = async (_url, init) => {
     body = init.body;
@@ -128,10 +112,12 @@ test("upload posts the ciphertext as one buffer", async () => {
   try {
     const saved = await uploadDrop({
       senderDeviceId: "f".repeat(32),
-      pinSalt: prepared.pinSalt,
       keys: prepared.keys,
       frames: prepared.frames,
       keepMs: 60_000,
+      onProgress: () => {
+        progressed = true;
+      },
     });
     assert.equal(saved.id, "d".repeat(32));
   } finally {
@@ -139,7 +125,9 @@ test("upload posts the ciphertext as one buffer", async () => {
   }
   assert.ok(body instanceof Uint8Array);
   assert.equal(body.byteLength > 4, true);
+  assert.equal(progressed, true);
   const jsonLength = new DataView(body.buffer, body.byteOffset, 4).getUint32(0);
   const meta = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + jsonLength)));
   assert.equal(meta.senderDeviceId, "f".repeat(32));
+  assert.equal("pinSalt" in meta, false);
 });

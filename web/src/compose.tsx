@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { prepareDrop, uploadDrop } from "./drop.mjs";
 import { formatTime, useLang, type Copy } from "./i18n";
 import { expiry, presets } from "./retention.mjs";
@@ -9,6 +9,7 @@ const notices = {
   sent: "sent",
   cap: "tooLarge",
   failed: "sendFailed",
+  abort: "sendCancelled",
 } as const;
 
 export function Compose({
@@ -23,12 +24,13 @@ export function Compose({
   const { lang, t } = useLang();
   const [texts, setTexts] = useState([""]);
   const [files, setFiles] = useState<File[]>([]);
-  const [pin, setPin] = useState("");
   const [preset, setPreset] = useState("1m");
   const [at, setAt] = useState("");
   const [sending, setSending] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [notice, setNotice] = useState<keyof typeof notices | "">("");
   const [skipped, setSkipped] = useState<string[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
   const selected = recipients.filter((row) => !skipped.includes(row.id));
   const picked = at ? new Date(at).getTime() : null;
   const chosen = expiry({ preset, at: picked }, Date.now());
@@ -36,41 +38,51 @@ export function Compose({
   const presetKey = `keep_${preset}` as keyof Copy;
   const ready = selected.length > 0 && (texts.some((text) => text.trim()) || files.length > 0) && (!at || chosen != null);
 
-  async function send(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function send(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     if (!ready || sending || !presetRow) return;
+    const control = new AbortController();
+    abortRef.current = control;
     setSending(true);
+    setProgress(0);
     setNotice("");
     try {
       const prepared = await prepareDrop({
         recipients: selected,
         texts: texts.filter((text) => text.trim()),
         files,
-        pin,
         maxBytes,
       });
       await uploadDrop({
         senderDeviceId: deviceId,
-        pinSalt: prepared.pinSalt,
         keys: prepared.keys,
         frames: prepared.frames,
+        signal: control.signal,
+        onProgress: (loaded, total) => setProgress(total ? Math.round((loaded / total) * 100) : 0),
         ...(at ? { expiresAt: picked ?? undefined } : { keepMs: presetRow[2] }),
       });
       setTexts([""]);
       setFiles([]);
-      setPin("");
       setAt("");
       setPreset("1m");
+      setProgress(100);
       setNotice("sent");
     } catch (err) {
-      setNotice(err instanceof Error && "code" in err && err.code === "cap" ? "cap" : "failed");
+      if (err instanceof Error && "code" in err && err.code === "abort") setNotice("abort");
+      else if (err instanceof Error && "code" in err && err.code === "cap") setNotice("cap");
+      else setNotice("failed");
     } finally {
+      abortRef.current = null;
       setSending(false);
     }
   }
 
+  function cancel() {
+    abortRef.current?.abort();
+  }
+
   return (
-    <form className="card compose" onSubmit={send}>
+    <form className="card compose" onSubmit={(event) => void send(event)}>
       <div>
         <span className="label">{t("to")}</span>
         <ul className="targets">
@@ -151,11 +163,6 @@ export function Compose({
           ))}
         </ul>
       ) : null}
-      <label className="field">
-        <span className="label">{t("pinOptional")}</span>
-        <input type="password" value={pin} autoComplete="off" onChange={(event) => setPin(event.target.value)} />
-        <span className="hint">{t("pinStays")}</span>
-      </label>
       <div className="keep" role="radiogroup" aria-label={t("keepFor")}>
         {presets.map(([id]) => (
           <button
@@ -188,10 +195,33 @@ export function Compose({
             : t("keptUntil", formatTime(chosen, lang))
           : t("timerStarts", t(presetKey))}
       </p>
-      <button type="submit" className="primary send" disabled={sending || !ready}>
-        {sending ? t("sending") : t("send")}
-      </button>
-      {notice ? (
+      {sending ? (
+        <div className="upload">
+          <div
+            className="upload-bar"
+            role="progressbar"
+            aria-label={t("uploadProgress")}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+          >
+            <span style={{ width: `${progress}%` }} />
+          </div>
+          <p className="hint">
+            {t("uploading", `${progress}`)}
+          </p>
+          <button type="button" className="quiet" onClick={cancel}>
+            {t("cancelUpload")}
+          </button>
+        </div>
+      ) : (
+        <div className="send-row">
+          <button type="submit" className="primary send" disabled={!ready}>
+            {notice === "failed" || notice === "abort" ? t("retry") : t("send")}
+          </button>
+        </div>
+      )}
+      {notice && !sending ? (
         <p className="notice" role="status">
           {t(notices[notice])}
         </p>

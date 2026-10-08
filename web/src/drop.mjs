@@ -1,12 +1,10 @@
 const chunkBytes = 1024 * 1024;
-const pinIterations = 600_000;
 const info = new TextEncoder().encode("ephemera");
 
 export async function prepareDrop({
   recipients,
   texts,
   files,
-  pin = "",
   chunkSize = chunkBytes,
   maxBytes = Number.MAX_SAFE_INTEGER,
 }) {
@@ -17,27 +15,16 @@ export async function prepareDrop({
   if (plainSize > maxBytes) failCap();
   const contentKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"]);
   const raw = new Uint8Array(await crypto.subtle.exportKey("raw", contentKey));
-  let pinSalt = null;
-  let toSeal = raw.slice();
-  if (pin) {
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const wrapped = new Uint8Array(
-      await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await pinKey(pin, salt, ["encrypt"]), raw),
-    );
-    toSeal = concat([iv, wrapped]);
-    pinSalt = bytesToBase64(salt);
-  }
-  raw.fill(0);
   const ephemeral = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
   const ephemeralPublic = new Uint8Array(await crypto.subtle.exportKey("spki", ephemeral.publicKey));
   const keys = [];
   for (const recipient of recipients) {
     keys.push({
       deviceId: recipient.id,
-      sealedKey: bytesToBase64(await seal(ephemeral.privateKey, ephemeralPublic, recipient.publicKey, toSeal)),
+      sealedKey: bytesToBase64(await seal(ephemeral.privateKey, ephemeralPublic, recipient.publicKey, raw)),
     });
   }
+  raw.fill(0);
   const manifest = {
     texts: kept,
     files: files.map((file) => ({
@@ -47,11 +34,11 @@ export async function prepareDrop({
       chunks: Math.ceil(fileSize(file) / chunkSize),
     })),
   };
-  return { pinSalt, keys, frames: frames(contentKey, manifest, files, chunkSize, maxBytes) };
+  return { keys, frames: frames(contentKey, manifest, files, chunkSize, maxBytes) };
 }
 
-export async function uploadDrop({ senderDeviceId, pinSalt, keys, frames, keepMs, expiresAt }) {
-  const meta = { senderDeviceId, pinSalt, keys };
+export async function uploadDrop({ senderDeviceId, keys, frames, keepMs, expiresAt, onProgress, signal }) {
+  const meta = { senderDeviceId, keys };
   if (keepMs != null) meta.keepMs = keepMs;
   else meta.expiresAt = expiresAt;
   const parts = [encodePrefix(meta)];
@@ -60,14 +47,60 @@ export async function uploadDrop({ senderDeviceId, pinSalt, keys, frames, keepMs
     if (next.done) break;
     parts.push(next.value);
   }
+  const body = concat(parts);
+  if (typeof XMLHttpRequest !== "undefined") {
+    return xhrUpload(body, { onProgress, signal });
+  }
+  if (signal?.aborted) throw abortErr();
   const res = await fetch("/api/drops", {
     method: "POST",
     headers: { "content-type": "application/octet-stream" },
-    body: concat(parts),
+    body,
+    signal,
   });
+  onProgress?.(body.byteLength, body.byteLength);
   if (res.status === 413) failCap();
   if (!res.ok) throw new Error("upload failed");
   return res.json();
+}
+
+function xhrUpload(body, { onProgress, signal }) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/drops");
+    xhr.responseType = "json";
+    xhr.setRequestHeader("content-type", "application/octet-stream");
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded, event.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status === 413) {
+        reject(Object.assign(new Error("too large"), { code: "cap" }));
+        return;
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error("upload failed"));
+        return;
+      }
+      onProgress?.(body.byteLength, body.byteLength);
+      resolve(xhr.response);
+    };
+    xhr.onerror = () => reject(new Error("upload failed"));
+    xhr.onabort = () => reject(abortErr());
+    const onAbort = () => xhr.abort();
+    if (signal) {
+      if (signal.aborted) {
+        reject(abortErr());
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+    xhr.send(body);
+  });
+}
+
+function abortErr() {
+  return Object.assign(new Error("aborted"), { code: "abort" });
 }
 
 export function encodePrefix(meta) {
@@ -78,8 +111,8 @@ export function encodePrefix(meta) {
   return out;
 }
 
-export async function openDrop({ privateKey, pin = "", pinSalt, sealedKey, bytes }) {
-  const raw = await unseal(privateKey, base64ToBytes(sealedKey), pin, pinSalt);
+export async function openDrop({ privateKey, sealedKey, bytes }) {
+  const raw = await unseal(privateKey, base64ToBytes(sealedKey));
   const key = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["decrypt"]);
   raw.fill(0);
   const frames = [];
@@ -156,7 +189,7 @@ async function seal(privateKey, ephemeralPublic, publicKey, bytes) {
   return out;
 }
 
-async function unseal(privateKey, bytes, pin, pinSalt) {
+async function unseal(privateKey, bytes) {
   if (bytes[0] !== 1 || bytes.length < 47) throw new Error("sealed");
   const salt = bytes.subarray(1, 17);
   const iv = bytes.subarray(17, 29);
@@ -167,34 +200,13 @@ async function unseal(privateKey, bytes, pin, pinSalt) {
   const their = await crypto.subtle.importKey("spki", ephPub, { name: "ECDH", namedCurve: "P-256" }, false, []);
   const shared = await crypto.subtle.deriveBits({ name: "ECDH", public: their }, privateKey, 256);
   const aes = await hkdf(shared, salt, ["decrypt"]);
-  const opened = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv }, aes, ct));
-  if (!pinSalt) return opened;
-  if (!pin || opened.length < 28) throw new Error("pin");
-  const pinAes = await pinKey(pin, base64ToBytes(pinSalt), ["decrypt"]);
-  return new Uint8Array(
-    await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: opened.subarray(0, 12) },
-      pinAes,
-      opened.subarray(12),
-    ),
-  );
+  return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv }, aes, ct));
 }
 
 async function hkdf(shared, salt, usages) {
   const base = await crypto.subtle.importKey("raw", shared, "HKDF", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
     { name: "HKDF", hash: "SHA-256", salt, info },
-    base,
-    { name: "AES-GCM", length: 256 },
-    false,
-    usages,
-  );
-}
-
-async function pinKey(pin, salt, usages) {
-  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveKey"]);
-  return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: pinIterations, hash: "SHA-256" },
     base,
     { name: "AES-GCM", length: 256 },
     false,

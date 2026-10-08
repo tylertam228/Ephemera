@@ -62,7 +62,7 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
   const cipher = Buffer.concat(frames);
   assert.equal(cipher.includes("hello secret"), false);
   assert.equal(cipher.includes("note.txt"), false);
-  const meta = { keepMs: 60_000, pinSalt: prepared.pinSalt, keys: prepared.keys, senderDeviceId: deviceId };
+  const meta = { keepMs: 60_000, keys: prepared.keys, senderDeviceId: deviceId };
   const body = Buffer.concat([Buffer.from(encodePrefix(meta)), cipher]);
 
   const dir = await mkdtemp(join(tmpdir(), "eph-drop-"));
@@ -124,7 +124,6 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
     assert.deepEqual(stored, cipher);
     const opened = await openDrop({
       privateKey: pair.privateKey,
-      pinSalt: null,
       sealedKey: prepared.keys[0].sealedKey,
       bytes: new Uint8Array(stored),
     });
@@ -132,10 +131,16 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
     assert.equal(opened.files[0].name, "note.txt");
 
     const foreign = Buffer.concat([
-      Buffer.from(encodePrefix({ keepMs: 60_000, pinSalt: null, keys: [{ deviceId: "b".repeat(32), sealedKey: prepared.keys[0].sealedKey }], senderDeviceId: deviceId })),
+      Buffer.from(encodePrefix({ keepMs: 60_000, keys: [{ deviceId: "b".repeat(32), sealedKey: prepared.keys[0].sealedKey }], senderDeviceId: deviceId })),
       cipher,
     ]);
     assert.equal((await send(port, "POST", "/api/drops", { cookie, body: foreign })).status, 400);
+
+    const withPin = Buffer.concat([
+      Buffer.from(encodePrefix({ ...meta, pinSalt: "cGluLXNhbHQtcGluLXNhbHQ=" })),
+      cipher,
+    ]);
+    assert.equal((await send(port, "POST", "/api/drops", { cookie, body: withPin })).status, 400);
 
     const strangerSender = Buffer.concat([
       Buffer.from(encodePrefix({ ...meta, senderDeviceId: "b".repeat(32) })),
@@ -148,13 +153,13 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
     assert.equal((await send(port, "POST", "/api/drops", { cookie, body: anonymous })).status, 400);
 
     const past = Buffer.concat([
-      Buffer.from(encodePrefix({ expiresAt: 1, pinSalt: null, keys: prepared.keys, senderDeviceId: deviceId })),
+      Buffer.from(encodePrefix({ expiresAt: 1, keys: prepared.keys, senderDeviceId: deviceId })),
       cipher,
     ]);
     assert.equal((await send(port, "POST", "/api/drops", { cookie, body: past })).status, 400);
 
     const both = Buffer.concat([
-      Buffer.from(encodePrefix({ keepMs: 60_000, expiresAt: Date.now() + 60_000, pinSalt: null, keys: prepared.keys, senderDeviceId: deviceId })),
+      Buffer.from(encodePrefix({ keepMs: 60_000, expiresAt: Date.now() + 60_000, keys: prepared.keys, senderDeviceId: deviceId })),
       cipher,
     ]);
     assert.equal((await send(port, "POST", "/api/drops", { cookie, body: both })).status, 400);
@@ -174,17 +179,16 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
       "laptop-public-key",
       now,
     );
-    const pinId = "d".repeat(32);
-    const salt = "cGluLXNhbHQtcGluLXNhbHQ=";
+    const otherId = "d".repeat(32);
     db.prepare("INSERT INTO drops (id, user_id, expires_at, pin_salt, created_at) VALUES (?, ?, ?, ?, ?)").run(
-      pinId,
+      otherId,
       "42",
       after + 120_000,
-      salt,
+      null,
       after + 1,
     );
     db.prepare("INSERT INTO drop_keys (drop_id, device_id, sealed_key) VALUES (?, ?, ?)").run(
-      pinId,
+      otherId,
       deviceId,
       "sealed-for-phone",
     );
@@ -205,16 +209,13 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
     const listed = JSON.parse(inbox.body);
     assert.deepEqual(
       listed.map((row) => row.id),
-      [saved.id, pinId],
+      [saved.id, otherId],
     );
-    assert.equal(listed[0].pin, false);
-    assert.equal(listed[1].pin, true);
     assert.equal(listed[0].fromDevice, "phone");
     assert.equal(listed[0].fromUser, "ada");
     assert.equal(listed[1].fromDevice, null);
     assert.equal(listed[1].fromUser, "ada");
     assert.equal(listed[0].expiresAt, saved.expiresAt);
-    assert.equal(inbox.body.includes(salt), false);
     assert.equal(inbox.body.includes("sealed-for-phone"), false);
     const elsewhere = await send(port, "GET", `/api/drops?device=${laptop}`, { cookie });
     assert.deepEqual(JSON.parse(elsewhere.body), []);
@@ -224,15 +225,12 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
     const detail = await send(port, "GET", `/api/drops/${saved.id}?device=${deviceId}`, { cookie });
     assert.equal(detail.status, 200);
     assert.equal(JSON.parse(detail.body).sealedKey, prepared.keys[0].sealedKey);
-    assert.equal(JSON.parse(detail.body).pinSalt, null);
-    const pinMeta = await send(port, "GET", `/api/drops/${pinId}?device=${deviceId}`, { cookie });
-    assert.equal(JSON.parse(pinMeta.body).pinSalt, salt);
+    assert.equal("pinSalt" in JSON.parse(detail.body), false);
     const blob = await send(port, "GET", `/api/drops/${saved.id}/blob?device=${deviceId}`, { cookie, raw: true });
     assert.equal(blob.status, 200);
     assert.deepEqual(blob.body, cipher);
     const readBack = await openDrop({
       privateKey: pair.privateKey,
-      pinSalt: null,
       sealedKey: prepared.keys[0].sealedKey,
       bytes: new Uint8Array(blob.body),
     });
@@ -261,7 +259,6 @@ test("an upload stores ciphertext and starts the timer when it finishes", async 
     assert.equal(text.includes(prepared.keys[0].sealedKey), false);
     assert.equal(text.includes("hello secret"), false);
     assert.equal(text.includes("note.txt"), false);
-    assert.equal(text.includes(salt), false);
     assert.equal(text.includes("sealed-for-phone"), false);
   } finally {
     await new Promise((resolve) => server.close(resolve));

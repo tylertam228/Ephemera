@@ -47,7 +47,7 @@ export async function handleDrop(req, res, { db, config, dataDir, log = writeLog
     db.transaction(() => {
       db.prepare(
         "INSERT INTO drops (id, user_id, expires_at, pin_salt, created_at, sender_device_id) VALUES (?, ?, ?, ?, ?, ?)",
-      ).run(id, user.id, expiresAt, meta.pinSalt, finishedAt, meta.senderDeviceId);
+      ).run(id, user.id, expiresAt, null, finishedAt, meta.senderDeviceId);
       const insertKey = db.prepare(
         "INSERT INTO drop_keys (drop_id, device_id, sealed_key) VALUES (?, ?, ?)",
       );
@@ -82,7 +82,7 @@ async function openItem(req, res, { db, dataDir, user, id, blob, log }) {
     return;
   }
   if (req.method === "GET") {
-    json(res, 200, { pinSalt: row.pinSalt, sealedKey: row.sealedKey, expiresAt: row.expiresAt });
+    json(res, 200, { sealedKey: row.sealedKey, expiresAt: row.expiresAt });
     return;
   }
   if (req.method === "DELETE" && !blob) {
@@ -123,11 +123,12 @@ async function streamBlob(res, dataDir, id) {
 function recipientDrop(db, userId, device, id) {
   return db
     .prepare(
-      `SELECT drops.expires_at AS expiresAt, drops.pin_salt AS pinSalt, drop_keys.sealed_key AS sealedKey
+      `SELECT drops.expires_at AS expiresAt, drop_keys.sealed_key AS sealedKey
        FROM drops
        JOIN drop_keys ON drop_keys.drop_id = drops.id AND drop_keys.device_id = ?
        JOIN devices ON devices.id = drop_keys.device_id AND devices.user_id = ?
-       WHERE drops.id = ? AND drops.user_id = ? AND drops.expires_at > ?`,
+       WHERE drops.id = ? AND drops.user_id = ? AND drops.expires_at > ?
+         AND COALESCE(devices.disabled, 0) = 0`,
     )
     .get(device, userId, id, userId, Date.now());
 }
@@ -151,16 +152,16 @@ function listInbox(req, res, db, user) {
   const rows = db
     .prepare(
       `SELECT drops.id, drops.expires_at AS expiresAt, drops.created_at AS createdAt,
-              drops.pin_salt IS NOT NULL AS pin,
               sender.name AS fromDevice, users.username AS fromUser
        FROM drops
        JOIN drop_keys ON drop_keys.drop_id = drops.id AND drop_keys.device_id = ?
+       JOIN devices ON devices.id = drop_keys.device_id AND devices.user_id = ?
        JOIN users ON users.id = drops.user_id
        LEFT JOIN devices AS sender ON sender.id = drops.sender_device_id
-       WHERE drops.user_id = ? AND drops.expires_at > ?
+       WHERE drops.user_id = ? AND drops.expires_at > ? AND COALESCE(devices.disabled, 0) = 0
        ORDER BY drops.created_at`,
     )
-    .all(device, user.id, Date.now());
+    .all(device, user.id, user.id, Date.now());
   json(
     res,
     200,
@@ -168,7 +169,6 @@ function listInbox(req, res, db, user) {
       id: row.id,
       expiresAt: row.expiresAt,
       createdAt: row.createdAt,
-      pin: Boolean(row.pin),
       fromDevice: row.fromDevice,
       fromUser: row.fromUser,
     })),
@@ -184,8 +184,7 @@ function checkMeta(db, userId, meta) {
   const expiresAt = hasAt ? integer(meta.expiresAt) : null;
   if (hasKeep && (keepMs == null || keepMs < 1)) throw bad();
   if (hasAt && expiresAt == null) throw bad();
-  const pinSalt = meta.pinSalt == null ? null : salt(meta.pinSalt);
-  if (meta.pinSalt != null && !pinSalt) throw bad();
+  if (meta.pinSalt != null) throw bad();
   if (!Array.isArray(meta.keys) || meta.keys.length < 1 || meta.keys.length > 32) throw bad();
   const keys = meta.keys.map((key) => {
     if (!key || typeof key.deviceId !== "string" || !/^[0-9a-f]{32}$/.test(key.deviceId)) throw bad();
@@ -195,15 +194,17 @@ function checkMeta(db, userId, meta) {
   if (new Set(keys.map((key) => key.deviceId)).size !== keys.length) throw bad();
   const rows = db
     .prepare(
-      `SELECT id FROM devices WHERE user_id = ? AND id IN (${keys.map(() => "?").join(",")})`,
+      `SELECT id FROM devices WHERE user_id = ? AND COALESCE(disabled, 0) = 0 AND id IN (${keys.map(() => "?").join(",")})`,
     )
     .all(userId, ...keys.map((key) => key.deviceId));
   if (rows.length !== keys.length) throw bad();
   const senderDeviceId = meta.senderDeviceId;
   if (typeof senderDeviceId !== "string" || !/^[0-9a-f]{32}$/.test(senderDeviceId)) throw bad();
-  const sender = db.prepare("SELECT id FROM devices WHERE id = ? AND user_id = ?").get(senderDeviceId, userId);
+  const sender = db
+    .prepare("SELECT id FROM devices WHERE id = ? AND user_id = ? AND COALESCE(disabled, 0) = 0")
+    .get(senderDeviceId, userId);
   if (!sender) throw bad();
-  return { keepMs, expiresAt, pinSalt, keys, senderDeviceId };
+  return { keepMs, expiresAt, keys, senderDeviceId };
 }
 
 async function acceptBody(req, file, maxBytes, onOpen, onMeta) {
@@ -262,11 +263,6 @@ function takeHeader(header, buf, declared) {
     pull();
   }
   return { header: nextHeader, rest, declared: nextDeclared };
-}
-
-function salt(value) {
-  const buf = canonical(value, 24, 24);
-  return buf?.length === 16 ? value : "";
 }
 
 function canonical(value, min, max) {
