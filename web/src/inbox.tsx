@@ -217,7 +217,7 @@ export function Inbox({
 
 function Review({ item, onClose }: { item: Opened; onClose: () => void }) {
   const { t } = useLang();
-  const [copied, setCopied] = useState<Message | "">("");
+  const [toast, setToast] = useState<Message | "">("");
   const [closing, setClosing] = useState(false);
   const [urls, setUrls] = useState<Record<number, string>>({});
 
@@ -235,12 +235,18 @@ function Review({ item, onClose }: { item: Opened; onClose: () => void }) {
     };
   }, [item]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), 2000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   async function copy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
-      setCopied("copied");
+      setToast("copied");
     } catch {
-      setCopied("nocopy");
+      setToast("nocopy");
     }
   }
 
@@ -303,7 +309,6 @@ function Review({ item, onClose }: { item: Opened; onClose: () => void }) {
               </div>
             );
           })}
-          {copied ? <Notice name={copied} /> : null}
           <div className="actions">
             <button type="button" className="quiet" disabled={closing} onClick={close}>
               {t("close")}
@@ -312,6 +317,11 @@ function Review({ item, onClose }: { item: Opened; onClose: () => void }) {
         </div>
         <span className="front" aria-hidden="true" />
       </div>
+      {toast ? (
+        <div className="toast" role="status" aria-live="polite">
+          {t(messages[toast])}
+        </div>
+      ) : null}
     </div>
   );
 }

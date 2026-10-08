@@ -619,6 +619,28 @@ textarea {
   margin-top: 0.75rem;
 }
 
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  z-index: 40;
+  transform: translateX(-50%);
+  padding: 0.65rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--note);
+  color: var(--ink);
+  box-shadow: 0 10px 24px -14px rgba(0, 0, 0, 0.55);
+  animation: toast-in 180ms ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+}
+
 .upload {
   display: grid;
   gap: 0.5rem;
@@ -784,7 +806,8 @@ textarea {
   .burn .note,
   .burn .front,
   .opened,
-  .burnbar > span::after {
+  .burnbar > span::after,
+  .toast {
     animation: none;
   }
 
