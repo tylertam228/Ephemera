@@ -1,9 +1,11 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState, type ReactNode } from "react";
 import { Compose } from "./compose";
 import { createDevice, loadDevice } from "./device";
 import { Devices, type ManagedDevice } from "./devices";
 import { LangSwitch, useLang } from "./i18n";
 import { Drop, Inbox } from "./inbox";
+import { AccountMenu, type View } from "./menu";
+import { Profile } from "./profile";
 import { ThemeSwitch } from "./theme";
 import { Logo } from "./ui";
 
@@ -19,10 +21,12 @@ export function App() {
   const [devices, setDevices] = useState<ManagedDevice[] | undefined>(undefined);
   const [inbox, setInbox] = useState<Drop[] | undefined>(undefined);
   const [fresh, setFresh] = useState(false);
+  const [view, setView] = useState<View>("home");
   const failed = new URLSearchParams(window.location.search).get("auth") === "failed";
   const recipients = devices
     ?.filter((row) => row.id !== device?.id && !row.disabled)
     .map((row) => ({ id: row.id, name: row.name, publicKey: row.publicKey }));
+  const signedIn = Boolean(me && device);
 
   useEffect(() => {
     let gone = false;
@@ -141,35 +145,21 @@ export function App() {
   return (
     <main>
       <header className="top">
-        <h1>
+        <button type="button" className="brand" onClick={() => setView("home")}>
           <Logo />
           <span>Ephemera</span>
-        </h1>
-        <div className="picks">
-          <LangSwitch />
-          <ThemeSwitch />
-        </div>
+        </button>
+        {signedIn ? <AccountMenu view={view} onGo={setView} /> : null}
       </header>
-      <p className="tag">{t("tag")}</p>
+      {view === "home" ? <p className="tag">{t("tag")}</p> : null}
       {failed ? (
         <p className="notice" role="alert">
           {t("signInFailed")}
         </p>
       ) : null}
       {me === undefined ? null : me ? (
-        <>
-          <div className="who">
-            <span>
-              {me.username}
-              {device ? <span className="user"> · {device.name}</span> : null}
-            </span>
-            <form action="/api/auth/logout" method="post">
-              <button type="submit" className="quiet">
-                {t("signOut")}
-              </button>
-            </form>
-          </div>
-          {device === undefined ? null : device ? (
+        device === undefined ? null : device ? (
+          view === "home" ? (
             <>
               {fresh ? (
                 <p className="notice" role="status">
@@ -191,27 +181,56 @@ export function App() {
                   deviceId={device.id}
                 />
               )}
-              <Devices
-                devices={devices}
-                currentId={device.id}
-                userId={me.id}
-                onChange={refreshDevices}
-              />
             </>
           ) : (
-            <form className="card" onSubmit={save}>
-              <input name="name" required maxLength={40} autoComplete="off" aria-label={t("deviceName")} />
-              <button type="submit" className="primary" disabled={busy}>
-                {t("saveDevice")}
-              </button>
-              {error ? (
-                <p className="notice" role="alert">
-                  {t("saveFailed")}
-                </p>
+            <Page title={pageTitle(view, t)} onBack={() => setView("home")}>
+              {view === "profile" ? (
+                <Profile
+                  username={me.username}
+                  deviceId={device.id}
+                  deviceName={device.name}
+                  userId={me.id}
+                  onRenamed={(name) => {
+                    setDevice({ id: device.id, name });
+                    refreshDevices();
+                  }}
+                />
               ) : null}
-            </form>
-          )}
-        </>
+              {view === "devices" ? (
+                <Devices
+                  devices={devices}
+                  currentId={device.id}
+                  userId={me.id}
+                  onChange={refreshDevices}
+                />
+              ) : null}
+              {view === "display" ? (
+                <section className="card page">
+                  <p className="hint">{t("displayHint")}</p>
+                  <ThemeSwitch />
+                </section>
+              ) : null}
+              {view === "language" ? (
+                <section className="card page">
+                  <p className="hint">{t("langHint")}</p>
+                  <LangSwitch />
+                </section>
+              ) : null}
+            </Page>
+          )
+        ) : (
+          <form className="card" onSubmit={save}>
+            <input name="name" required maxLength={40} autoComplete="off" aria-label={t("deviceName")} />
+            <button type="submit" className="primary" disabled={busy}>
+              {t("saveDevice")}
+            </button>
+            {error ? (
+              <p className="notice" role="alert">
+                {t("saveFailed")}
+              </p>
+            ) : null}
+          </form>
+        )
       ) : (
         <p>
           <a className="primary" href="/api/auth/discord">
@@ -221,4 +240,34 @@ export function App() {
       )}
     </main>
   );
+}
+
+function Page({
+  title,
+  onBack,
+  children,
+}: {
+  title: string;
+  onBack: () => void;
+  children: ReactNode;
+}) {
+  const { t } = useLang();
+  return (
+    <div className="sheet">
+      <div className="sheet-bar">
+        <button type="button" className="quiet" onClick={onBack}>
+          {t("back")}
+        </button>
+        <h2>{title}</h2>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function pageTitle(view: View, t: ReturnType<typeof useLang>["t"]) {
+  if (view === "profile") return t("profile");
+  if (view === "devices") return t("manageDevices");
+  if (view === "display") return t("displayMode");
+  return t("lang");
 }

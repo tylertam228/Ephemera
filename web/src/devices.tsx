@@ -86,8 +86,7 @@ export function Devices({
   }
 
   return (
-    <section className="card devices">
-      <h2>{t("devices")}</h2>
+    <section className="card page devices">
       <p className="hint">{t("devicesHint")}</p>
       <ul className="device-list">
         {devices.map((row) => (

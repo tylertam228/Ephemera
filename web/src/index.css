@@ -97,12 +97,122 @@ h2 {
   gap: 1rem;
 }
 
-h1 {
+.brand {
   display: flex;
   align-items: center;
   gap: 0.6rem;
   font-size: 1.5rem;
+  font-weight: 700;
   letter-spacing: 0.02em;
+  text-align: left;
+}
+
+.menu {
+  position: relative;
+}
+
+.menu-btn {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  background: var(--note);
+}
+
+.menu-btn:hover,
+.menu-btn[aria-expanded="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.menu-panel {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 20;
+  min-width: 12.5rem;
+  padding: 0.35rem;
+  background: var(--note);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.55);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 2.4rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.menu-item:hover:not(:disabled),
+.menu-item.on {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.menu-item:disabled {
+  opacity: 0.55;
+}
+
+.menu-soon {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.sheet {
+  margin-top: 1rem;
+}
+
+.sheet-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.sheet-bar h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.page {
+  margin-top: 0;
+}
+
+.profile-facts {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+}
+
+.profile-facts > div {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.profile-facts dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.profile-facts dd {
+  margin: 0;
+}
+
+.profile-out {
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--line);
 }
 
 .logo {
@@ -113,7 +223,6 @@ h1 {
 }
 
 .tag,
-.who,
 .hint,
 .empty {
   color: var(--muted);
@@ -123,30 +232,13 @@ h1 {
   margin-top: 0.25rem;
 }
 
-.who {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.25rem 1rem;
-  margin: 1rem 0;
-  padding: 0.5rem 0;
-  border-block: 1px dashed var(--line);
-}
-
-.who form {
-  margin: 0;
-}
-
 .user {
   color: var(--muted);
 }
 
-.picks {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem 1rem;
+.page .themes,
+.page .langs {
+  margin-top: 0.75rem;
 }
 
 .langs {
@@ -458,17 +550,6 @@ textarea {
   font-weight: 600;
 }
 
-.who-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem 1rem;
-}
-
-.who-actions form {
-  margin: 0;
-}
-
 .text {
   display: grid;
   gap: 0.35rem;
@@ -726,10 +807,10 @@ textarea {
   }
 
   .top,
-  .who,
   .adders,
   .block,
-  .files li {
+  .files li,
+  .sheet-bar {
     flex-wrap: wrap;
   }
 
