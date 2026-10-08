@@ -12,9 +12,13 @@ export function openDb(dataDir) {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(schema);
-  const columns = db.prepare("PRAGMA table_info(drops)").all();
-  if (!columns.some((column) => column.name === "sender_device_id")) {
+  const dropColumns = db.prepare("PRAGMA table_info(drops)").all();
+  if (!dropColumns.some((column) => column.name === "sender_device_id")) {
     db.exec("ALTER TABLE drops ADD COLUMN sender_device_id TEXT REFERENCES devices(id)");
+  }
+  const deviceColumns = db.prepare("PRAGMA table_info(devices)").all();
+  if (!deviceColumns.some((column) => column.name === "disabled")) {
+    db.exec("ALTER TABLE devices ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0");
   }
   return db;
 }

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Compose } from "./compose";
 import { createDevice, loadDevice } from "./device";
+import { Devices, type ManagedDevice } from "./devices";
 import { LangSwitch, useLang } from "./i18n";
 import { Drop, Inbox } from "./inbox";
 import { ThemeSwitch } from "./theme";
@@ -8,7 +9,6 @@ import { Logo } from "./ui";
 
 type Me = { id: string; username: string; maxUploadMb: number };
 type Device = { id: string; name: string };
-type Recipient = Device & { publicKey: string };
 
 export function App() {
   const { t } = useLang();
@@ -16,10 +16,13 @@ export function App() {
   const [device, setDevice] = useState<Device | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
-  const [recipients, setRecipients] = useState<Recipient[] | undefined>(undefined);
+  const [devices, setDevices] = useState<ManagedDevice[] | undefined>(undefined);
   const [inbox, setInbox] = useState<Drop[] | undefined>(undefined);
   const [fresh, setFresh] = useState(false);
   const failed = new URLSearchParams(window.location.search).get("auth") === "failed";
+  const recipients = devices
+    ?.filter((row) => row.id !== device?.id && !row.disabled)
+    .map((row) => ({ id: row.id, name: row.name, publicKey: row.publicKey }));
 
   useEffect(() => {
     let gone = false;
@@ -57,18 +60,28 @@ export function App() {
 
   useEffect(() => {
     if (!device) return;
+    const deviceId = device.id;
     let gone = false;
     let primed = false;
     let known = new Set<string>();
     setInbox(undefined);
     const load = () => {
-      fetch(`/api/devices?except=${encodeURIComponent(device.id)}`)
+      fetch("/api/devices")
         .then(async (res) => {
           if (!res.ok || gone) return;
-          setRecipients((await res.json()) as Recipient[]);
+          const rows = (await res.json()) as ManagedDevice[];
+          setDevices(rows);
+          const mine = rows.find((row) => row.id === deviceId);
+          if (mine) {
+            setDevice((current) =>
+              current && current.id === mine.id && current.name !== mine.name
+                ? { id: mine.id, name: mine.name }
+                : current,
+            );
+          }
         })
         .catch(() => {});
-      fetch(`/api/drops?device=${encodeURIComponent(device.id)}`)
+      fetch(`/api/drops?device=${encodeURIComponent(deviceId)}`)
         .then(async (res) => {
           if (!res.ok || gone) return;
           const next = (await res.json()) as Drop[];
@@ -94,7 +107,7 @@ export function App() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [device]);
+  }, [device?.id]);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -111,6 +124,18 @@ export function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function refreshDevices() {
+    fetch("/api/devices")
+      .then(async (res) => {
+        if (!res.ok || !device) return;
+        const rows = (await res.json()) as ManagedDevice[];
+        setDevices(rows);
+        const mine = rows.find((row) => row.id === device.id);
+        if (mine) setDevice({ id: mine.id, name: mine.name });
+      })
+      .catch(() => {});
   }
 
   return (
@@ -166,6 +191,12 @@ export function App() {
                   deviceId={device.id}
                 />
               )}
+              <Devices
+                devices={devices}
+                currentId={device.id}
+                userId={me.id}
+                onChange={refreshDevices}
+              />
             </>
           ) : (
             <form className="card" onSubmit={save}>

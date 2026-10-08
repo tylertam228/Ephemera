@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS devices (
   name TEXT NOT NULL,
   public_key TEXT NOT NULL,
   created_at INTEGER NOT NULL,
+  disabled INTEGER NOT NULL DEFAULT 0,
   UNIQUE (user_id, public_key)
 );
 

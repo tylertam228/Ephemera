@@ -59,6 +59,23 @@ export async function createDevice(userId: string, name: string): Promise<LocalD
   return { userId, deviceId: row.deviceId, name: row.name, publicKey };
 }
 
+export async function clearLocalDevice(userId: string): Promise<void> {
+  const db = await openDb();
+  try {
+    const tx = db.transaction(storeName, "readwrite");
+    tx.objectStore(storeName).delete(userId);
+    await done(tx);
+  } finally {
+    db.close();
+  }
+}
+
+export async function renameLocalDevice(userId: string, name: string): Promise<void> {
+  const row = await read(userId);
+  if (!row) return;
+  await write({ ...row, name });
+}
+
 function bytesToBase64(bytes: ArrayBuffer): string {
   let binary = "";
   for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);

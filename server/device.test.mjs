@@ -73,6 +73,7 @@ test("a device public key is stored for the signed-in user only", async () => {
     handleAuth(req, res, {
       config,
       db,
+      dataDir: dir,
       fetch,
       log: (level, msg, fields) => lines.push(logfmt(level, msg, fields)),
     }).catch((err) => {
@@ -130,8 +131,32 @@ test("a device public key is stored for the signed-in user only", async () => {
       ["phone"],
     );
 
+    const renamed = await send(port, "PATCH", `/api/devices/${saved.id}`, {
+      cookie,
+      body: JSON.stringify({ name: "desk" }),
+    });
+    assert.equal(renamed.status, 200);
+    assert.equal(JSON.parse(renamed.body).name, "desk");
+
+    const off = await send(port, "PATCH", `/api/devices/${"b".repeat(32)}`, {
+      cookie,
+      body: JSON.stringify({ disabled: true }),
+    });
+    assert.equal(off.status, 200);
+    assert.equal(JSON.parse(off.body).disabled, true);
+    const hidden = await send(port, "GET", `/api/devices?except=${saved.id}`, { cookie });
+    assert.deepEqual(JSON.parse(hidden.body), []);
+    const managed = await send(port, "GET", "/api/devices", { cookie });
+    assert.equal(JSON.parse(managed.body).find((row) => row.id === "b".repeat(32)).disabled, true);
+
+    const removed = await send(port, "DELETE", `/api/devices/${"b".repeat(32)}`, { cookie });
+    assert.equal(removed.status, 204);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM devices WHERE id = ?").get("b".repeat(32)).n, 0);
+
     const text = lines.join("\n");
     assert.match(text, /msg=device_registered/);
+    assert.match(text, /msg=device_updated/);
+    assert.match(text, /msg=device_removed/);
     assert.equal(text.includes(locked.spki), false);
   } finally {
     await new Promise((resolve) => server.close(resolve));

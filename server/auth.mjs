@@ -59,8 +59,8 @@ export async function handleAuth(req, res, { config, db, dataDir, fetch: fetchIm
       me(req, res, db, config);
       return true;
     }
-    if (url.pathname === "/api/devices") {
-      await handleDevice(req, res, { db, log });
+    if (url.pathname === "/api/devices" || /^\/api\/devices\/[0-9a-f]{32}$/.test(url.pathname)) {
+      await handleDevice(req, res, { db, dataDir, log });
       return true;
     }
     if (url.pathname === "/api/drops" || /^\/api\/drops\/[0-9a-f]{32}(\/blob)?$/.test(url.pathname)) {

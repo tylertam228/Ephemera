@@ -64,6 +64,28 @@ test("schema stores sealed keys and only the session hash", async () => {
   }
 });
 
+test("opening an older database adds the disabled column once", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "eph-dev-"));
+  try {
+    mkdirSync(dir, { recursive: true });
+    const old = new Database(join(dir, "ephemera.sqlite"));
+    old.exec(
+      "CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT NOT NULL, created_at INTEGER NOT NULL);" +
+        "CREATE TABLE devices (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, public_key TEXT NOT NULL, created_at INTEGER NOT NULL);" +
+        "INSERT INTO users VALUES ('1', 'ada', 1);" +
+        "INSERT INTO devices VALUES ('d', '1', 'phone', 'pk', 1);",
+    );
+    old.close();
+    const db = openDb(dir);
+    const names = db.prepare("PRAGMA table_info(devices)").all().map((column) => column.name);
+    assert.equal(names.includes("disabled"), true);
+    assert.equal(db.prepare("SELECT disabled AS d FROM devices WHERE id = 'd'").get().d, 0);
+    db.close();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("opening an older database adds the sender column once", async () => {
   const dir = await mkdtemp(join(tmpdir(), "eph-old-"));
   try {
