@@ -2,7 +2,7 @@
 
 Version 1 is a burn-after-reading drop for text and files. Two machines that cannot reach each other directly both open this site, sign in with the same Discord account, and hand the payload across. The server stores ciphertext only. Opening a drop removes it from that device. The ciphertext is deleted when every selected device has opened it, or when its timer expires. There is no content backup.
 
-One command builds the browser app and serves it. Discord sign-in, device keys, the recipient check, the compose screen, encrypted upload with progress, the inbox, claiming a drop, the review screen with local preview, device management, and the expiry sweep are in place. A push to `main` that passes CI deploys itself. This document defines the version 1 scope, the encryption flow, and the local Discord setup.
+One command builds the browser app and serves it. Discord sign-in, device keys, the recipient check, the compose screen, encrypted upload with progress, the inbox, claiming a drop, the review screen with local preview, device management, and the expiry sweep are in place. The built site is a PWA: on HTTPS it can be installed to the home screen on iOS, Android, and Windows. A push to `main` that passes CI deploys itself. This document defines the version 1 scope, the encryption flow, and the local Discord setup.
 
 ## Local
 
@@ -24,6 +24,7 @@ That installs the browser dependencies, builds them, and serves the build at htt
 - A successful decrypt is the claim for that device only. Other selected devices keep the drop until they open it. The ciphertext is deleted when the last selected device claims it. Expiry deletes it for everyone still waiting.
 - After decrypt, the recipient gets a review screen and nothing is saved automatically. Each text block is shown in full with a Copy button. Each file is listed with its filename and type, plus a Download button. Images, video, and PDF open as an in-browser preview only. A basic local check warns on risky names or executable magic bytes; it is not a full antivirus. Closing the page discards whatever is still only in the browser.
 - Files are encrypted in chunks. The server cap is `MAX_UPLOAD_MB`, default 1024 (1GB per drop). The operator can raise or lower it. The cap protects disk space.
+- The site installs as a Progressive Web App. The service worker caches the shell only. API calls and drop ciphertext are never cached. Private keys stay in that browser profile.
 
 The server keeps ciphertext, the content key sealed for each target device, the expiry time, and the sender device id shown in the inbox. Plaintext, the content key, and device private keys stay in the browser. Device public keys and sealed content keys are stored as themselves. Hashing either one would leave the other device unable to open the drop. The Discord client secret stays in the environment and is not written to the database. Sign-in stores the SHA-256 of the session token, not the token. A sweep deletes expired ciphertext and rows. It does not wait for the recipient to open the drop.
 
